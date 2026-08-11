@@ -134,6 +134,8 @@
   <div class="linha">
     <span class="rot">Vídeo</span>
     <input type="file" id="arqVideo" accept="video/*" title="Arquivo de vídeo da partida">
+    <input type="text" id="txtVideoUrl" placeholder="https://.../video.mp4" size="34" title="Link do vídeo">
+    <button id="btAbrirUrl" class="compacto">Abrir link</button>
     <span class="rot" style="margin-left:8px">Anotações</span>
     <button id="btExportar" disabled>Exportar JSON</button>
     <button id="btImportar">Importar JSON</button>
@@ -393,11 +395,11 @@
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
   // ------------------------------------------------------------------ video
-  function carregarVideo(arq) {
-    if (!arq) return;
+  function carregarVideoPorFonte(fonte) {
+    if (!fonte || !fonte.src) return;
     if (urlVideo) URL.revokeObjectURL(urlVideo);
-    urlVideo = URL.createObjectURL(arq);
-    impressao = `${arq.name}|${arq.size}|${arq.lastModified}`;
+    urlVideo = fonte.revogavel ? fonte.src : null;
+    impressao = fonte.impressao;
 
     // Um JSON importado antes de abrir o video vence o que estiver salvo no navegador;
     // fora esse caso, trocar de video NAO carrega as anotacoes do video anterior.
@@ -405,23 +407,47 @@
     importadoPendente = false;
     const salvo = lerSalvo(impressao);
     if (usarImportado) {
-      nota(`Anotações importadas mantidas sobre "${arq.name}".`);
+      nota(`Anotações importadas mantidas sobre "${fonte.nome}".`);
     } else if (salvo) {
       estado = salvo;
       nota(`${estado.anotacoes.length} anotação(ões) restaurada(s) do navegador.`);
     } else {
       estado = novoEstado();
-      nota(`"${arq.name}" carregado.`);
+      nota(`"${fonte.nome}" carregado.`);
     }
-    estado.video = { nome: arq.name, tamanho: arq.size, modificado: arq.lastModified };
+    estado.video = fonte.videoInfo;
     seq = estado.anotacoes.reduce((m, a) => Math.max(m, a.id), 0) + 1;
     selecionado = null;
     pilhaDesfazer = []; pilhaRefazer = [];
 
     $("selTol").value = String(estado.tolPadrao);
     const v = $("video");
-    v.src = urlVideo;
+    v.src = fonte.src;
     v.load();
+  }
+
+  function carregarVideo(arq) {
+    if (!arq) return;
+    carregarVideoPorFonte({
+      src: URL.createObjectURL(arq),
+      revogavel: true,
+      nome: arq.name,
+      impressao: `${arq.name}|${arq.size}|${arq.lastModified}`,
+      videoInfo: { nome: arq.name, tamanho: arq.size, modificado: arq.lastModified, origem: "arquivo" }
+    });
+  }
+
+  function carregarVideoUrl(url) {
+    const limpa = String(url || "").trim();
+    if (!limpa) return nota("Informe um link de vídeo válido.", true);
+    try { new URL(limpa); } catch (_) { return nota("O link do vídeo não parece ser uma URL válida.", true); }
+    carregarVideoPorFonte({
+      src: limpa,
+      revogavel: false,
+      nome: limpa,
+      impressao: `url|${limpa}`,
+      videoInfo: { nome: limpa, url: limpa, origem: "url" }
+    });
   }
 
   function aoCarregarMetadados() {
@@ -1218,6 +1244,10 @@
     const v = $("video");
 
     $("arqVideo").addEventListener("change", (e) => carregarVideo(e.target.files[0]));
+    $("btAbrirUrl").addEventListener("click", () => carregarVideoUrl($("txtVideoUrl").value));
+    $("txtVideoUrl").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); carregarVideoUrl($("txtVideoUrl").value); }
+    });
     $("btImportar").addEventListener("click", () => $("arqJson").click());
     $("arqJson").addEventListener("change", (e) => { if (e.target.files[0]) importar(e.target.files[0]); e.target.value = ""; });
     $("btExportar").addEventListener("click", exportar);
