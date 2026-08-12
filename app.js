@@ -216,6 +216,7 @@
     $("slTempo").value = "0";
     $("vazio").hidden = true;
     $("painelTempo").hidden = false;
+    $("selInfo").hidden = false;        // a partir daqui ela nunca mais sai do fluxo
     $("painelRecorte").hidden = false;
     $("grade").hidden = false;
     $("btExportar").disabled = false;
@@ -1008,7 +1009,8 @@
   // e coladas no video, que e onde o olho ja esta.
   function atualizarSelecao() {
     const a = estado.anotacoes.find(q => q.id === selecionado);
-    $("selInfo").hidden = !a;
+    // classe, e nao hidden: a faixa continua reservando a altura dela (ver styles.css)
+    $("selInfo").classList.toggle("vazia", !a);
     $("btIrSel").disabled = !a;
     if (!a) return;
     $("selCor").style.background = a.cor;

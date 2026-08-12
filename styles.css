@@ -206,10 +206,19 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
 .relogio { font: 13px/1 ui-monospace, Consolas, monospace; min-width: 142px; }
 #lbRegua { font-family: ui-monospace, Consolas, monospace; }
 
-/* ações da anotação selecionada: só aparecem quando há uma */
+/* Ações da anotação selecionada. A faixa nunca sai do fluxo: o vídeo é flex:1 e mudaria
+   de tamanho a cada seleção se ela entrasse e saísse. Sem seleção, o conteúdo fica
+   invisível — mas continua ocupando o mesmo espaço, então a altura não muda nunca. */
 .selinfo {
+  position: relative;
   border-bottom: 0; border-top: 1px solid var(--borda);
   background: color-mix(in srgb, var(--eu) 9%, var(--painel));
+}
+.selinfo.vazia { background: var(--painel); }
+.selinfo.vazia > :not(.dica-sel) { visibility: hidden; }
+.dica-sel { display: none; }
+.selinfo.vazia .dica-sel {
+  display: block; position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
 }
 
 @media (max-width: 760px) {
