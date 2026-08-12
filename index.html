@@ -19,6 +19,7 @@
 <div class="painel">
   <div class="linha">
     <span class="rot">Vídeo</span>
+    <button id="btEscolher" hidden title="Abrir um vídeo do disco — este navegador consegue reabri-lo depois sem novo upload">Abrir vídeo…</button>
     <input type="file" id="arqVideo" accept="video/*" title="Arquivo de vídeo da partida">
     <input type="text" id="txtVideoUrl" placeholder="https://.../video.mp4" size="34" title="Link do vídeo">
     <button id="btAbrirUrl" class="compacto">Abrir link</button>
@@ -31,6 +32,14 @@
   <div class="linha rot">
     Você também pode arrastar o vídeo (ou um <code>.json</code> de anotações) para qualquer lugar da página.
   </div>
+</div>
+
+<div class="painel" id="painelBiblio" hidden>
+  <div class="linha">
+    <span class="rot">Vídeos salvos</span>
+    <div class="biblio" id="biblio"></div>
+  </div>
+  <div class="linha rot" id="dicaBiblio"></div>
 </div>
 
 <div class="painel" id="painelTempo" hidden>

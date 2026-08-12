@@ -66,6 +66,19 @@ tr.alvo td { cursor: pointer; }
   display: inline-block; width: 9px; height: 9px; border-radius: 2px;
   margin-right: 6px; vertical-align: baseline;
 }
+/* ---- lista de vídeos salvos ---- */
+.biblio { display: flex; flex-wrap: wrap; gap: 6px; }
+.item {
+  display: inline-flex; align-items: center; overflow: hidden;
+  border: 1px solid var(--borda); border-radius: 999px; background: var(--painel);
+}
+.item button { border: 0; border-radius: 0; background: none; padding: 4px 12px; font-size: 12px; }
+.item button:hover:not(:disabled) { background: color-mix(in srgb, var(--eu) 15%, transparent); }
+.item button.fechar { padding: 4px 10px 4px 6px; color: var(--fraco); }
+.item button.fechar:hover { background: color-mix(in srgb, var(--adv) 20%, transparent); color: var(--adv); }
+.item.atual { border-color: var(--eu); background: color-mix(in srgb, var(--eu) 12%, transparent); }
+.item.atual button:first-child { font-weight: 600; }
+
 .resumo { font: 12px/1.7 ui-monospace, Consolas, monospace; color: var(--fraco); }
 .resumo b { color: var(--texto); font-weight: 600; }
 .aviso { color: var(--adv); }

@@ -7,6 +7,7 @@
   const RAZAO_CAMPO = MAX_X / MAX_Y;        // 2.0
   const LIM_MIN = -6000, LIM_MAX_X = MAX_X + 6000, LIM_MAX_Y = MAX_Y + 6000;
   const CHAVE = "analisador_video:v1:";
+  const CHAVE_BIB = "analisador_video:v1:biblioteca";
   const VERSAO = 1;
   const svgNS = "http://www.w3.org/2000/svg";
 
@@ -20,6 +21,9 @@
   let vw = 0, vh = 0;                 // dimensoes nativas do video, em px
   let urlVideo = null;                // object URL vigente (precisa ser revogado)
   let impressao = null;               // chave do localStorage para o video atual
+  let biblioteca = [];                // lista de videos guardados, na ordem do mais recente
+  let fonteAtual = null;              // { fonte, handle } do video que esta abrindo
+  let aguardandoReabrir = null;       // item da lista que o usuario foi localizar no disco
   let fps = 30, fpsDetectado = null;
   let amostrasFps = [], ultimoMediaTime = null;
 
@@ -38,7 +42,7 @@
 
   let pilhaDesfazer = [], pilhaRefazer = [];
   let pedidoRender = 0, assinatura = "";
-  let temporizadorSalvar = 0;
+  let temporizadorSalvar = 0, pendente = null;
   let entradaTexto = null;
   let importadoPendente = false;      // JSON importado antes de abrir o video
 
@@ -117,11 +121,13 @@
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
   // ------------------------------------------------------------------ video
-  function carregarVideoPorFonte(fonte) {
+  function carregarVideoPorFonte(fonte, handle) {
     if (!fonte || !fonte.src) return;
+    salvarPendente();                   // grava o video que sai antes de a chave mudar
     if (urlVideo) URL.revokeObjectURL(urlVideo);
     urlVideo = fonte.revogavel ? fonte.src : null;
     impressao = fonte.impressao;
+    fonteAtual = { fonte, handle: handle || null };
 
     // Um JSON importado antes de abrir o video vence o que estiver salvo no navegador;
     // fora esse caso, trocar de video NAO carrega as anotacoes do video anterior.
@@ -148,15 +154,23 @@
     v.load();
   }
 
-  function carregarVideo(arq) {
+  function carregarVideo(arq, handle) {
     if (!arq) return;
+    const imp = `${arq.name}|${arq.size}|${arq.lastModified}`;
+    const esperado = aguardandoReabrir;
+    aguardandoReabrir = null;
     carregarVideoPorFonte({
       src: URL.createObjectURL(arq),
       revogavel: true,
       nome: arq.name,
-      impressao: `${arq.name}|${arq.size}|${arq.lastModified}`,
+      impressao: imp,
       videoInfo: { nome: arq.name, tamanho: arq.size, modificado: arq.lastModified, origem: "arquivo" }
-    });
+    }, handle);
+    // a impressao digital e o que liga o arquivo as anotacoes: se ela nao bate, o usuario
+    // escolheu outro arquivo (ou o mesmo video reexportado) e vai abrir um caderno em branco
+    if (esperado && esperado.imp !== imp) {
+      nota(`"${arq.name}" não é o arquivo que estava na lista — as anotações guardadas continuam com o original.`, true);
+    }
   }
 
   function carregarVideoUrl(url) {
@@ -193,6 +207,7 @@
     $("btExportar").disabled = false;
 
     amostrasFps = []; ultimoMediaTime = null; fpsDetectado = null;
+    lembrarVideo();
     aplicarFps();
     atualizarRecorteUI();
     atualizarPainel();
@@ -1029,16 +1044,26 @@
   }
 
   // ------------------------------------------------------------------ persistencia
+  // O atraso de 400 ms junta rajadas de edicao numa gravacao so, mas quem chama pode trocar
+  // de video antes de o relogio tocar: por isso a chave e o objeto ficam presos AQUI, senao
+  // o estado do video novo seria gravado sob a chave do antigo (ou vice-versa).
   function salvar() {
     if (!impressao) return;
+    pendente = { chave: CHAVE + impressao, alvo: estado };
     clearTimeout(temporizadorSalvar);
-    temporizadorSalvar = setTimeout(() => {
-      try {
-        localStorage.setItem(CHAVE + impressao, JSON.stringify(estado, serializar));
-      } catch (err) {
-        nota("Não consegui salvar no navegador (armazenamento cheio?). Use Exportar JSON.", true);
-      }
-    }, 400);
+    temporizadorSalvar = setTimeout(salvarPendente, 400);
+  }
+
+  function salvarPendente() {
+    clearTimeout(temporizadorSalvar);
+    temporizadorSalvar = 0;
+    if (!pendente) return;
+    try {
+      localStorage.setItem(pendente.chave, JSON.stringify(pendente.alvo, serializar));
+    } catch (err) {
+      nota("Não consegui salvar no navegador (armazenamento cheio?). Use Exportar JSON.", true);
+    }
+    pendente = null;
   }
 
   function lerSalvo(imp) {
@@ -1048,6 +1073,153 @@
       const s = JSON.parse(bruto, desserializar);
       return (s && Array.isArray(s.anotacoes)) ? s : null;
     } catch (err) { return null; }
+  }
+
+  // ------------------------------------------------------------------ biblioteca de videos
+  // O navegador nao deixa um site guardar o caminho de um arquivo do disco: um File vindo de
+  // <input type=file> morre junto com a aba. Quem sobrevive ao F5 e o FileSystemFileHandle
+  // da File System Access API — e ele so cabe no IndexedDB, que guarda objetos, nao texto.
+  // Onde essa API nao existe (Firefox, Safari) a lista continua valendo, mas reabrir um
+  // arquivo pede que o usuario o localize de novo; as anotacoes voltam sozinhas porque a
+  // chave delas e a impressao digital nome|tamanho|modificado, que nao muda.
+  const BD = "analisador_video", LOJA = "handles", MAX_BIB = 24;
+  const temPicker = typeof window.showOpenFilePicker === "function";
+
+  function comBanco(modo, fn) {
+    return new Promise((ok, falha) => {
+      const req = indexedDB.open(BD, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(LOJA);
+      req.onerror = () => falha(req.error);
+      req.onsuccess = () => {
+        const bd = req.result;
+        try {
+          const tx = bd.transaction(LOJA, modo);
+          const p = fn(tx.objectStore(LOJA));
+          tx.oncomplete = () => { bd.close(); ok(p ? p.result : undefined); };
+          tx.onerror = () => { bd.close(); falha(tx.error); };
+        } catch (err) { bd.close(); falha(err); }
+      };
+    });
+  }
+
+  const guardarHandle = (imp, h) => comBanco("readwrite", (l) => l.put(h, imp));
+  const lerHandle = (imp) => comBanco("readonly", (l) => l.get(imp)).catch(() => null);
+  const apagarHandle = (imp) => comBanco("readwrite", (l) => l.delete(imp)).catch(() => {});
+
+  function lerBiblioteca() {
+    try {
+      const b = JSON.parse(localStorage.getItem(CHAVE_BIB) || "[]");
+      return Array.isArray(b) ? b.filter(x => x && x.imp && x.nome) : [];
+    } catch (err) { return []; }
+  }
+
+  function salvarBiblioteca() {
+    try { localStorage.setItem(CHAVE_BIB, JSON.stringify(biblioteca)); } catch (err) {}
+  }
+
+  // Registrado so depois que o video abriu de verdade, para link quebrado nao sujar a lista.
+  function lembrarVideo() {
+    if (!fonteAtual) return;
+    const { fonte, handle } = fonteAtual;
+    fonteAtual = null;
+    const antigo = biblioteca.find(x => x.imp === fonte.impressao);
+    const it = {
+      imp: fonte.impressao,
+      nome: fonte.videoInfo.nome,
+      origem: fonte.videoInfo.origem,
+      url: fonte.videoInfo.url || null,
+      duracao: isFinite($("video").duration) ? $("video").duration : null,
+      comHandle: !!(antigo && antigo.comHandle)     // um handle ja guardado continua valendo
+    };
+    const sobra = [it, ...biblioteca.filter(x => x.imp !== it.imp)];
+    for (const velho of sobra.slice(MAX_BIB)) apagarHandle(velho.imp);
+    biblioteca = sobra.slice(0, MAX_BIB);
+    salvarBiblioteca();
+    desenharBiblioteca();
+
+    if (handle) {
+      guardarHandle(it.imp, handle)
+        .then(() => { it.comHandle = true; salvarBiblioteca(); desenharBiblioteca(); })
+        .catch(() => {});
+    }
+  }
+
+  function esquecerVideo(it) {
+    biblioteca = biblioteca.filter(x => x.imp !== it.imp);
+    salvarBiblioteca();
+    apagarHandle(it.imp);
+    desenharBiblioteca();
+    nota(`"${it.nome}" saiu da lista — as anotações dele continuam guardadas.`);
+  }
+
+  function desenharBiblioteca() {
+    const faixa = $("biblio");
+    faixa.textContent = "";
+    $("painelBiblio").hidden = biblioteca.length === 0;
+    for (const it of biblioteca) {
+      const d = document.createElement("div");
+      d.className = "item" + (it.imp === impressao ? " atual" : "");
+
+      const b = document.createElement("button");
+      b.textContent = it.nome.length > 44 ? `${it.nome.slice(0, 42)}…` : it.nome;
+      b.title = [
+        it.nome,
+        it.origem === "url" ? "link" : "arquivo do disco",
+        it.duracao ? fmtTempo(it.duracao) : null,
+        it.origem === "url" || it.comHandle ? "abre direto" : "vai pedir para localizar o arquivo"
+      ].filter(Boolean).join(" · ");
+      b.addEventListener("click", () => abrirDaBiblioteca(it));
+
+      const x = document.createElement("button");
+      x.className = "fechar";
+      x.textContent = "✕";
+      x.title = "Tirar da lista (as anotações continuam guardadas)";
+      x.addEventListener("click", () => esquecerVideo(it));
+
+      d.append(b, x);
+      faixa.appendChild(d);
+    }
+  }
+
+  async function abrirDaBiblioteca(it) {
+    if (it.imp === impressao) return nota(`"${it.nome}" já está aberto.`);
+    if (it.origem === "url" && it.url) return carregarVideoUrl(it.url);
+
+    const h = it.comHandle ? await lerHandle(it.imp) : null;
+    if (h) {
+      try {
+        // requestPermission exige gesto do usuario; o clique nesta lista serve como gesto
+        let p = await h.queryPermission({ mode: "read" });
+        if (p === "prompt") p = await h.requestPermission({ mode: "read" });
+        if (p === "granted") return carregarVideo(await h.getFile(), h);
+        return nota(`Sem permissão para reabrir "${it.nome}".`, true);
+      } catch (err) {
+        // arquivo movido, renomeado ou apagado desde a ultima vez
+      }
+    }
+    aguardandoReabrir = it;
+    nota(`Localize "${it.nome}" para reabrir.`);
+    if (temPicker) abrirComPicker(); else $("arqVideo").click();
+  }
+
+  async function abrirComPicker() {
+    try {
+      const [h] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{
+          description: "Vídeo",
+          accept: {
+            "video/mp4": [".mp4", ".m4v"], "video/webm": [".webm"], "video/ogg": [".ogv"],
+            "video/x-matroska": [".mkv"], "video/quicktime": [".mov"]
+          }
+        }]
+      });
+      if (h) carregarVideo(await h.getFile(), h);
+    } catch (err) {
+      aguardandoReabrir = null;
+      // AbortError e so o usuario fechando o seletor; o resto merece aparecer
+      if (err && err.name !== "AbortError") nota(`Não consegui abrir o seletor: ${err.message}`, true);
+    }
   }
 
   function exportar() {
@@ -1114,7 +1286,10 @@
   function ligar() {
     const v = $("video");
 
-    $("arqVideo").addEventListener("change", (e) => carregarVideo(e.target.files[0]));
+    $("arqVideo").addEventListener("change", (e) => { carregarVideo(e.target.files[0]); e.target.value = ""; });
+    // fechar o seletor sem escolher nada desarma o aviso de "arquivo diferente"
+    $("arqVideo").addEventListener("cancel", () => { aguardandoReabrir = null; });
+    $("btEscolher").addEventListener("click", abrirComPicker);
     $("btAbrirUrl").addEventListener("click", () => carregarVideoUrl($("txtVideoUrl").value));
     $("txtVideoUrl").addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); carregarVideoUrl($("txtVideoUrl").value); }
@@ -1207,11 +1382,19 @@
     document.addEventListener("dragover", (e) => e.preventDefault());
     document.addEventListener("drop", (e) => {
       e.preventDefault();
-      const arq = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      const dt = e.dataTransfer;
+      const arq = dt && dt.files && dt.files[0];
       if (!arq) return;
-      if (/\.json$/i.test(arq.name) || arq.type === "application/json") importar(arq);
-      else if (arq.type.startsWith("video/") || /\.(mp4|webm|mkv|mov|m4v|ogv)$/i.test(arq.name)) carregarVideo(arq);
-      else nota("Arraste um vídeo ou um .json de anotações.", true);
+      if (/\.json$/i.test(arq.name) || arq.type === "application/json") { importar(arq); return; }
+      if (!arq.type.startsWith("video/") && !/\.(mp4|webm|mkv|mov|m4v|ogv)$/i.test(arq.name)) {
+        return nota("Arraste um vídeo ou um .json de anotações.", true);
+      }
+      // o handle tem de ser pedido AGORA: o dataTransfer e esvaziado no fim do evento
+      const item = dt.items && dt.items[0];
+      const pedido = item && typeof item.getAsFileSystemHandle === "function"
+        ? item.getAsFileSystemHandle().catch(() => null)
+        : Promise.resolve(null);
+      pedido.then((h) => carregarVideo(arq, h && h.kind === "file" ? h : null));
     });
 
     document.addEventListener("keydown", (e) => {
@@ -1238,7 +1421,20 @@
       }
     });
 
+    // fechar a aba nao pode comer a ultima edicao presa no atraso de 400 ms
+    window.addEventListener("pagehide", salvarPendente);
+
+    // com o seletor da File System Access API o arquivo pode ser reaberto depois do F5;
+    // sem ele, resta o <input type=file> de sempre
+    $("btEscolher").hidden = !temPicker;
+    $("arqVideo").hidden = temPicker;
+    $("dicaBiblio").textContent = temPicker
+      ? "Os vídeos abertos ficam nesta lista e sobrevivem ao F5. Na primeira vez depois de reabrir a página o navegador pede permissão para ler o arquivo de novo."
+      : "Os vídeos abertos ficam nesta lista. Neste navegador o arquivo não pode ser reaberto sozinho: ao clicar, localize-o no disco — as anotações voltam sozinhas.";
+
     montarCores();
+    biblioteca = lerBiblioteca();
+    desenharBiblioteca();
     atualizarRotuloEsp();
     atualizarBotoesHist();
   }
