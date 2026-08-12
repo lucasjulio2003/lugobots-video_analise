@@ -595,10 +595,42 @@
     if (sel && opacidadeEm(sel, t) > 0.02) desenharSelecao(g, sel);
   }
 
+  // ------------------------------------------------------------------ ferramentas
+  // Atalhos: o numero na ordem da barra ou a inicial do nome. 'linha' e 'livre' brigam pelo
+  // L, entao a mao livre fica com o M de "mao"; 'selecionar' cede o S para 'seta' e fica
+  // com o V, como na maioria dos editores.
+  const ATALHOS = {
+    "1": "selecionar", v: "selecionar",
+    "2": "seta",       s: "seta",
+    "3": "linha",      l: "linha",
+    "4": "livre",      m: "livre",
+    "5": "retangulo",  r: "retangulo",
+    "6": "elipse",     e: "elipse",
+    "7": "zona",       z: "zona",
+    "8": "texto",      t: "texto",
+    "9": "jogador",    j: "jogador"
+  };
+
+  function escolherFerramenta(nome) {
+    ferramenta = nome;
+    for (const b of $("barraFerr").children) {
+      b.classList.toggle("ativa", b.getAttribute("data-ferr") === nome);
+    }
+    $("tela").classList.toggle("desenhando", nome !== "selecionar");
+    if (nome !== "selecionar") selecionado = null;
+    assinatura = ""; agendarRender();
+  }
+
+  // Toda ferramenta e de um uso so: assim que a anotacao entra, a mao volta para a seta.
+  // Como 'inserir' ja deixa a nova anotacao selecionada, ela sai pronta para mover ou apagar.
+  const voltarParaSelecao = () => escolherFerramenta("selecionar");
+
   // ------------------------------------------------------------------ ponteiro
   function aoPressionar(e) {
     if (e.button !== 0) return;
-    fecharEntradaTexto(false);          // clicar fora confirma o texto que estava sendo digitado
+    // clicar fora confirma o texto que estava sendo digitado; esse clique se esgota nisso,
+    // senao ele ainda cairia na ferramenta seguinte e desfaria a selecao do texto recem-criado
+    if (fecharEntradaTexto(false)) { e.preventDefault(); return; }
     const tela = $("tela");
 
     if (modoRecorte) {
@@ -663,6 +695,7 @@
       empilhar();
       inserir({ tipo: "jogador", pts: [p], numero: n, esp: espessura, t });
       $("numJogador").value = String(clamp(n + 1, 0, 99));
+      voltarParaSelecao();
       return;
     }
 
@@ -739,7 +772,8 @@
         (TIPOS_DOIS_PONTOS.has(p.tipo) && Math.hypot(p.pts[1][0] - p.pts[0][0], p.pts[1][1] - p.pts[0][1]) < 120);
       if (!pequena) {
         if (p.tipo === "livre" || p.tipo === "zona") p.pts = simplificar(p.pts, 60);
-        if (p.pts.length >= 2) { empilhar(); inserir(p); }
+        // um risco curto demais e descartado: nesse caso a ferramenta continua na mao
+        if (p.pts.length >= 2) { empilhar(); inserir(p); voltarParaSelecao(); }
       }
     }
     if (tipo === "rec-novo" || tipo === "rec-mover" || tipo === "rec-alca") atualizarRecorteUI();
@@ -821,15 +855,19 @@
     });
   }
 
+  // Devolve true so quando o texto virou anotacao, para quem chamou saber se o clique
+  // ja teve serventia e nao deve fazer mais nada.
   function fecharEntradaTexto(cancelar) {
-    if (!entradaTexto) return;
+    if (!entradaTexto) return false;
     const { inp, p, t } = entradaTexto;
     entradaTexto = null;
     const txt = inp.value.trim();
     inp.remove();
-    if (cancelar || !txt) return;
+    if (cancelar || !txt) return false;
     empilhar();
     inserir({ tipo: "texto", pts: [p], texto: txt, esp: corpoTexto(espessura), t });
+    voltarParaSelecao();
+    return true;
   }
 
   // ------------------------------------------------------------------ CRUD
@@ -1121,12 +1159,7 @@
 
     $("barraFerr").addEventListener("click", (e) => {
       const b = e.target.closest("button[data-ferr]");
-      if (!b) return;
-      ferramenta = b.getAttribute("data-ferr");
-      [...$("barraFerr").children].forEach(x => x.classList.toggle("ativa", x === b));
-      $("tela").classList.toggle("desenhando", ferramenta !== "selecionar");
-      if (ferramenta !== "selecionar") selecionado = null;
-      assinatura = ""; agendarRender();
+      if (b) escolherFerramenta(b.getAttribute("data-ferr"));
     });
 
     $("slEsp").addEventListener("input", (e) => {
@@ -1190,12 +1223,17 @@
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); refazer(); return; }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+      // sem recorte a barra de ferramentas nem esta na tela, e no modo recorte ela nao vale
+      const atalho = ATALHOS[e.key.toLowerCase()];
+      if (atalho && estado.recorte && !modoRecorte) { e.preventDefault(); escolherFerramenta(atalho); return; }
+
       if (e.key === "ArrowLeft")  { e.preventDefault(); e.shiftKey ? (v.pause(), irPara(v.currentTime - 1)) : passoQuadro(-1); }
       else if (e.key === "ArrowRight") { e.preventDefault(); e.shiftKey ? (v.pause(), irPara(v.currentTime + 1)) : passoQuadro(1); }
       else if (e.key === " ") { e.preventDefault(); v.paused ? v.play() : v.pause(); }
       else if ((e.key === "Delete" || e.key === "Backspace") && selecionado !== null) { e.preventDefault(); remover(selecionado); }
       else if (e.key === "Escape") {
         if (modoRecorte) sairRecorte(false);
+        else if (ferramenta !== "selecionar") voltarParaSelecao();
         else { selecionado = null; assinatura = ""; agendarRender(); }
       }
     });
