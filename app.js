@@ -23,6 +23,8 @@
   let urlVideo = null;                // object URL vigente (precisa ser revogado)
   let impressao = null;               // chave do localStorage para o video atual
   let biblioteca = [];                // lista de videos guardados, na ordem do mais recente
+  let editando = null;                // impressao do item com o editor de titulo aberto
+  const minis = new Map();            // impressao -> miniatura, para nao reler o banco
   let fonteAtual = null;              // { fonte, handle } do video que esta abrindo
   let aguardandoReabrir = null;       // item da lista que o usuario foi localizar no disco
   let fps = 30, fpsDetectado = null;
@@ -996,10 +998,13 @@
   // espaco da imagem. O inventario de anotacoes vive na regua de tiques e na barra abaixo.
   function atualizarPainel() {
     const dur = estado.video && estado.video.duracao;
+    const it = biblioteca.find(x => x.imp === impressao);
+    const rotulo = (it && it.titulo) || (estado.video && estado.video.nome) || "";
     $("resumo").innerHTML = estado.video
-      ? `<b>${escapar(estado.video.nome)}</b> · ${vw}×${vh} · ${dur ? fmtTempo(dur) : "—"}` +
+      ? `<b>${escapar(rotulo)}</b> · ${vw}×${vh} · ${dur ? fmtTempo(dur) : "—"}` +
         ` · ${fps} q/s · <b>${estado.anotacoes.length}</b> anotação(ões)`
       : "";
+    $("resumo").title = (it && it.descricao) || "";
     atualizarRotuloEsp();
     atualizarSelecao();
     desenharTiques();
@@ -1105,6 +1110,52 @@
   const lerHandle = (imp) => comBanco("readonly", (l) => l.get(imp)).catch(() => null);
   const apagarHandle = (imp) => comBanco("readwrite", (l) => l.delete(imp)).catch(() => {});
 
+  // As miniaturas ficam no mesmo banco, e nao no localStorage: sao alguns KB cada uma e
+  // disputariam com as anotacoes a cota de 5 MB, que e onde mora o trabalho do usuario.
+  const guardarMini = (imp, d) => comBanco("readwrite", (l) => l.put(d, `mini:${imp}`));
+  const lerMini = (imp) => comBanco("readonly", (l) => l.get(`mini:${imp}`)).catch(() => null);
+  const apagarMini = (imp) => comBanco("readwrite", (l) => l.delete(`mini:${imp}`)).catch(() => {});
+
+  // Um quadro do proprio <video> desenhado num canvas. Video de outra origem sem CORS suja
+  // o canvas e toDataURL lanca: nesse caso ficamos sem miniatura, e esta tudo bem.
+  function quadroAtual() {
+    const v = $("video");
+    if (!v.videoWidth) return null;
+    try {
+      const L = 192, A = Math.max(1, Math.round(L * v.videoHeight / v.videoWidth));
+      const c = document.createElement("canvas");
+      c.width = L; c.height = A;
+      c.getContext("2d").drawImage(v, 0, 0, L, A);
+      return c.toDataURL("image/jpeg", 0.62);
+    } catch (err) { return null; }
+  }
+
+  // Roda uma vez por video, logo depois de abrir: pula o comeco (costuma ser preto), tira
+  // o retrato e devolve o cursor para onde estava, sem o usuario perceber.
+  function prepararMiniatura() {
+    const imp = impressao;
+    const it = biblioteca.find(x => x.imp === imp);
+    if (!it || it.temMini) return;
+    const v = $("video");
+    const voltar = v.currentTime;
+    const alvo = Math.min(3, (isFinite(v.duration) ? v.duration : 0) / 2);
+
+    const tirar = () => {
+      v.removeEventListener("seeked", tirar);
+      const dados = quadroAtual();
+      if (Math.abs(v.currentTime - voltar) > 0.001) v.currentTime = voltar;
+      if (!dados) return;
+      minis.set(imp, dados);
+      desenharBiblioteca();
+      guardarMini(imp, dados)
+        .then(() => { it.temMini = true; salvarBiblioteca(); })
+        .catch(() => {});
+    };
+
+    if (alvo > voltar + 0.05) { v.addEventListener("seeked", tirar); v.currentTime = alvo; }
+    else tirar();
+  }
+
   function lerBiblioteca() {
     try {
       const b = JSON.parse(localStorage.getItem(CHAVE_BIB) || "[]");
@@ -1128,10 +1179,14 @@
       origem: fonte.videoInfo.origem,
       url: fonte.videoInfo.url || null,
       duracao: isFinite($("video").duration) ? $("video").duration : null,
+      // o que o usuario escreveu e o retrato ja tirado sobrevivem a reabrir o mesmo video
+      titulo: (antigo && antigo.titulo) || "",
+      descricao: (antigo && antigo.descricao) || "",
+      temMini: !!(antigo && antigo.temMini),
       comHandle: !!(antigo && antigo.comHandle)     // um handle ja guardado continua valendo
     };
     const sobra = [it, ...biblioteca.filter(x => x.imp !== it.imp)];
-    for (const velho of sobra.slice(MAX_BIB)) apagarHandle(velho.imp);
+    for (const velho of sobra.slice(MAX_BIB)) { apagarHandle(velho.imp); apagarMini(velho.imp); }
     biblioteca = sobra.slice(0, MAX_BIB);
     salvarBiblioteca();
     desenharBiblioteca();
@@ -1153,39 +1208,128 @@
 
   function esquecerVideo(it) {
     biblioteca = biblioteca.filter(x => x.imp !== it.imp);
+    if (editando === it.imp) editando = null;
+    minis.delete(it.imp);
     salvarBiblioteca();
     apagarHandle(it.imp);
+    apagarMini(it.imp);
     desenharBiblioteca();
-    nota(`"${it.nome}" saiu da lista — as anotações dele continuam guardadas.`);
+    nota(`"${rotuloDe(it)}" saiu da lista — as anotações dele continuam guardadas.`);
   }
+
+  // O titulo e a descricao sao do usuario e vivem na lista; 'nome' continua sendo a
+  // identidade tecnica (arquivo ou link) e so aparece na dica sobre o item.
+  const rotuloDe = (it) => (it && it.titulo) || (it && it.nome) || "—";
 
   function desenharBiblioteca() {
     const faixa = $("biblio");
     faixa.textContent = "";
     $("painelBiblio").hidden = biblioteca.length === 0;
-    for (const it of biblioteca) {
-      const d = document.createElement("div");
-      d.className = "item" + (it.imp === impressao ? " atual" : "");
+    for (const it of biblioteca) faixa.appendChild(montarEntrada(it));
+  }
 
-      const b = document.createElement("button");
-      b.textContent = it.nome;          // o corte fica com o CSS, que sabe a largura real
-      b.title = [
-        it.nome,
-        it.origem === "url" ? "link" : "arquivo do disco",
-        it.duracao ? fmtTempo(it.duracao) : null,
-        it.origem === "url" || it.comHandle ? "abre direto" : "vai pedir para localizar o arquivo"
-      ].filter(Boolean).join(" · ");
-      b.addEventListener("click", () => abrirDaBiblioteca(it));
+  function montarEntrada(it) {
+    const caixa = document.createElement("div");
+    caixa.className = "entrada" + (it.imp === impressao ? " atual" : "");
 
-      const x = document.createElement("button");
-      x.className = "fechar";
-      x.textContent = "✕";
-      x.title = "Tirar da lista (as anotações continuam guardadas)";
-      x.addEventListener("click", () => esquecerVideo(it));
+    const d = document.createElement("div");
+    d.className = "item";
 
-      d.append(b, x);
-      faixa.appendChild(d);
+    const abrir = document.createElement("button");
+    abrir.className = "abrir";
+    abrir.title = [
+      it.nome,
+      it.origem === "url" ? "link" : "arquivo do disco",
+      it.duracao ? fmtTempo(it.duracao) : null,
+      it.origem === "url" || it.comHandle ? "abre direto" : "vai pedir para localizar o arquivo"
+    ].filter(Boolean).join(" · ");
+    abrir.addEventListener("click", () => abrirDaBiblioteca(it));
+
+    // caixa vazia com cor de fundo enquanto nao ha retrato: nada de icone de imagem quebrada
+    const mini = document.createElement("span");
+    mini.className = "mini";
+    if (minis.has(it.imp)) {
+      mini.style.backgroundImage = `url(${minis.get(it.imp)})`;
+    } else if (it.temMini) {
+      lerMini(it.imp).then((dados) => {
+        if (!dados) return;
+        minis.set(it.imp, dados);
+        mini.style.backgroundImage = `url(${dados})`;
+      });
     }
+
+    const txt = document.createElement("span");
+    txt.className = "txt";
+    const nome = document.createElement("span");
+    nome.className = "nome";
+    nome.textContent = rotuloDe(it);
+    txt.appendChild(nome);
+    if (it.descricao) {
+      const desc = document.createElement("span");
+      desc.className = "desc";
+      desc.textContent = it.descricao;
+      txt.appendChild(desc);
+    }
+
+    abrir.append(mini, txt);
+
+    const ed = document.createElement("button");
+    ed.className = "acao";
+    ed.textContent = "✎";
+    ed.title = "Título e descrição";
+    ed.addEventListener("click", () => {
+      editando = editando === it.imp ? null : it.imp;
+      desenharBiblioteca();
+      const campo = $("biblio").querySelector(".editor input");
+      if (campo) campo.focus();
+    });
+
+    const x = document.createElement("button");
+    x.className = "acao fechar";
+    x.textContent = "✕";
+    x.title = "Tirar da lista (as anotações continuam guardadas)";
+    x.addEventListener("click", () => esquecerVideo(it));
+
+    d.append(abrir, ed, x);
+    caixa.appendChild(d);
+    if (editando === it.imp) caixa.appendChild(montarEditor(it));
+    return caixa;
+  }
+
+  function montarEditor(it) {
+    const ed = document.createElement("div");
+    ed.className = "editor";
+
+    const ti = document.createElement("input");
+    ti.type = "text";
+    ti.placeholder = "Título";
+    ti.value = it.titulo || "";
+
+    const de = document.createElement("textarea");
+    de.rows = 3;
+    de.placeholder = "Descrição";
+    de.value = it.descricao || "";
+
+    const gravar = () => {
+      it.titulo = ti.value.trim();
+      it.descricao = de.value.trim();
+      salvarBiblioteca();
+      if (it.imp === impressao) atualizarPainel();   // o topo mostra o titulo do video aberto
+    };
+    ti.addEventListener("change", gravar);
+    de.addEventListener("change", gravar);
+    ti.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); de.focus(); }
+      if (e.key === "Escape") { e.preventDefault(); editando = null; desenharBiblioteca(); }
+    });
+
+    const pronto = document.createElement("button");
+    pronto.className = "compacto";
+    pronto.textContent = "Pronto";
+    pronto.addEventListener("click", () => { gravar(); editando = null; desenharBiblioteca(); });
+
+    ed.append(ti, de, pronto);
+    return ed;
   }
 
   async function abrirDaBiblioteca(it) {
@@ -1306,6 +1450,8 @@
     $("btExportar").addEventListener("click", exportar);
 
     v.addEventListener("loadedmetadata", aoCarregarMetadados);
+    // loadeddata, e nao loadedmetadata: so aqui o primeiro quadro existe para ser desenhado
+    v.addEventListener("loadeddata", prepararMiniatura);
     v.addEventListener("timeupdate", agendarRender);
     v.addEventListener("seeked", () => { assinatura = ""; agendarRender(); });
     v.addEventListener("durationchange", () => {

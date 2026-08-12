@@ -99,24 +99,46 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
 .add-link input { flex: 1; min-width: 0; }
 
 .biblio { display: flex; flex-direction: column; gap: 3px; }
-.item {
-  display: flex; align-items: center; border-radius: 7px;
-  border: 1px solid transparent;
+.entrada { border-radius: 7px; border: 1px solid transparent; }
+.item { display: flex; align-items: center; }
+.item button { border: 0; background: none; border-radius: 0; }
+.item .abrir {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  padding: 5px 4px 5px 5px; text-align: left;
 }
-.item button {
-  border: 0; background: none; border-radius: 0; padding: 6px 8px; font-size: 12.5px;
-  text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* caixa preta enquanto o retrato não chega; a imagem entra como fundo, então nunca
+   existe o ícone de imagem quebrada nem um salto de altura quando ela carrega */
+.mini {
+  flex: none; width: 50px; height: 29px; border-radius: 3px;
+  background: #000 center/cover no-repeat;
 }
-.item button:first-child { flex: 1; min-width: 0; }
-.item:hover { background: color-mix(in srgb, var(--texto) 7%, transparent); }
-.item button.fechar { color: var(--fraco); opacity: 0; padding: 6px 9px; }
-.item:hover button.fechar { opacity: 1; }
-.item button.fechar:hover { color: var(--adv); }
-.item.atual {
+.txt { display: flex; flex-direction: column; min-width: 0; }
+.txt .nome { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.txt .desc {
+  font-size: 11px; color: var(--fraco); line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.item .acao { color: var(--fraco); opacity: 0; padding: 6px 7px; font-size: 12px; }
+.entrada:hover .acao, .entrada:focus-within .acao { opacity: 1; }
+/* sem mouse não há hover: aí os botões ficam sempre visíveis, senão seriam inalcançáveis */
+@media (hover: none) { .item .acao { opacity: 1; } }
+.item .acao:hover { color: var(--texto); }
+.item .fechar:hover { color: var(--adv); }
+.entrada:hover { background: color-mix(in srgb, var(--texto) 7%, transparent); }
+.entrada.atual {
   border-color: color-mix(in srgb, var(--eu) 45%, transparent);
   background: color-mix(in srgb, var(--eu) 13%, transparent);
 }
-.item.atual button:first-child { font-weight: 600; }
+.entrada.atual .nome { font-weight: 600; }
+
+.editor { display: flex; flex-direction: column; gap: 5px; padding: 2px 7px 8px; }
+.editor input, .editor textarea {
+  width: 100%; font: inherit; font-size: 12px;
+  padding: 4px 6px; border-radius: 5px; border: 1px solid var(--borda);
+  background: var(--painel); color: var(--texto);
+}
+.editor textarea { resize: vertical; min-height: 48px; line-height: 1.4; }
+.editor button { align-self: flex-end; }
 .dica { margin: 8px 2px 0; line-height: 1.45; }
 
 .ajuda { margin-top: auto; }
