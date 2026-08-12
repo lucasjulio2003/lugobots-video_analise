@@ -8,6 +8,7 @@
   const LIM_MIN = -6000, LIM_MAX_X = MAX_X + 6000, LIM_MAX_Y = MAX_Y + 6000;
   const CHAVE = "analisador_video:v1:";
   const CHAVE_BIB = "analisador_video:v1:biblioteca";
+  const CHAVE_LATERAL = "analisador_video:v1:lateral";
   const VERSAO = 1;
   const svgNS = "http://www.w3.org/2000/svg";
 
@@ -124,6 +125,7 @@
   function carregarVideoPorFonte(fonte, handle) {
     if (!fonte || !fonte.src) return;
     salvarPendente();                   // grava o video que sai antes de a chave mudar
+    $("menuAdd").open = false;          // o menu de adicionar ja cumpriu o papel dele
     if (urlVideo) URL.revokeObjectURL(urlVideo);
     urlVideo = fonte.revogavel ? fonte.src : null;
     impressao = fonte.impressao;
@@ -186,12 +188,24 @@
     });
   }
 
+  // O palco e absoluto dentro da area do video, entao o tamanho dele nao realimenta o
+  // layout e da para caber a imagem inteira sem barra de rolagem. A razao TEM de ser a
+  // nativa do video: o SVG por cima usa preserveAspectRatio="none" e sairia esticado em
+  // relacao a imagem se a caixa fosse achatada.
+  function ajustarPalco() {
+    if (!vw || !vh) return;
+    const c = $("grade").getBoundingClientRect();
+    if (!c.width || !c.height) return;
+    let w = c.width, h = w * vh / vw;
+    if (h > c.height) { h = c.height; w = h * vw / vh; }
+    $("palco").style.width = `${w}px`;
+    $("palco").style.height = `${h}px`;
+  }
+
   function aoCarregarMetadados() {
     const v = $("video");
     vw = v.videoWidth || 1280;
     vh = v.videoHeight || 720;
-    // O palco recebe a proporcao nativa do video: sem letterbox, o SVG cobre exatamente a imagem.
-    $("palco").style.aspectRatio = `${vw} / ${vh}`;
     $("tela").setAttribute("viewBox", `0 0 ${vw} ${vh}`);
 
     estado.video.duracao = v.duration;
@@ -205,6 +219,7 @@
     $("painelRecorte").hidden = false;
     $("grade").hidden = false;
     $("btExportar").disabled = false;
+    ajustarPalco();                     // so depois de a area sair do hidden e ter tamanho
 
     amostrasFps = []; ultimoMediaTime = null; fpsDetectado = null;
     lembrarVideo();
@@ -294,6 +309,9 @@
 
   function atualizarRecorteUI() {
     const tem = !!estado.recorte;
+    // enquanto falta o recorte nada mais funciona, entao a barra dele ganha destaque;
+    // depois de definido ela encolhe e sai do caminho
+    $("painelRecorte").classList.toggle("chamada", !tem);
     $("btRecortar").hidden = modoRecorte;
     $("btConfirmar").hidden = !modoRecorte;
     $("btCancelarRec").hidden = !modoRecorte;
@@ -632,7 +650,11 @@
       b.classList.toggle("ativa", b.getAttribute("data-ferr") === nome);
     }
     $("tela").classList.toggle("desenhando", nome !== "selecionar");
+    // opcoes que so valem para uma ferramenta ficam fora do caminho das outras
+    $("campoPreench").hidden = nome !== "retangulo" && nome !== "elipse";
+    $("campoNum").hidden = nome !== "jogador";
     if (nome !== "selecionar") selecionado = null;
+    atualizarSelecao();
     assinatura = ""; agendarRender();
   }
 
@@ -959,7 +981,7 @@
   const serializar = (k, v) => (k === "tol" && v === Infinity) ? "sempre" : v;
   const desserializar = (k, v) => (k === "tol" && v === "sempre") ? Infinity : v;
 
-  // ------------------------------------------------------------------ painel lateral
+  // ------------------------------------------------------------------ leitura de estado
   // Com um texto selecionado a barra mexe no corpo da fonte, que e um numero bem maior
   // que a espessura do traco; mostrar o valor de verdade evita a leitura errada.
   function atualizarRotuloEsp() {
@@ -969,54 +991,29 @@
       : `${espessura} u`;
   }
 
+  // Uma linha só, no alto: o que o usuario precisa saber sobre o video aberto sem tirar
+  // espaco da imagem. O inventario de anotacoes vive na regua de tiques e na barra abaixo.
   function atualizarPainel() {
-    const n = estado.anotacoes.length;
     const dur = estado.video && estado.video.duracao;
-    $("resumo").innerHTML =
-      `vídeo: <b>${estado.video ? escapar(estado.video.nome) : "—"}</b><br>` +
-      `${vw}×${vh} px · ${dur ? fmtTempo(dur) : "—"} · ${fps} q/s<br>` +
-      `recorte: <b>${estado.recorte ? "definido" : "não definido"}</b><br>` +
-      `anotações: <b>${n}</b>`;
-    $("btIrSel").disabled = selecionado === null;
+    $("resumo").innerHTML = estado.video
+      ? `<b>${escapar(estado.video.nome)}</b> · ${vw}×${vh} · ${dur ? fmtTempo(dur) : "—"}` +
+        ` · ${fps} q/s · <b>${estado.anotacoes.length}</b> anotação(ões)`
+      : "";
     atualizarRotuloEsp();
-
-    const tb = $("tabela").tBodies[0];
-    tb.textContent = "";
-    const ordenadas = estado.anotacoes.slice().sort((a, b) => a.t - b.t);
-    for (const a of ordenadas) {
-      const tr = document.createElement("tr");
-      tr.className = "alvo" + (a.id === selecionado ? " sel" : "");
-      tr.innerHTML =
-        `<td>${fmtTempo(a.t)}</td>` +
-        `<td><span class="chip" style="background:${a.cor}"></span>${a.tipo}</td>` +
-        `<td>${fmtTol(tolDe(a))}</td>` +
-        `<td></td>`;
-      tr.addEventListener("click", () => {
-        selecionado = a.id;
-        irPara(a.t);
-        atualizarPainel();
-        assinatura = "";
-        agendarRender();
-      });
-
-      const td = tr.lastElementChild;
-      const bt = document.createElement("button");
-      bt.className = "compacto"; bt.textContent = "⏱";
-      bt.title = "Recolocar no tempo atual";
-      bt.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        empilhar();
-        a.t = $("video").currentTime;
-        salvar(); atualizarPainel(); assinatura = ""; agendarRender();
-      });
-      const bx = document.createElement("button");
-      bx.className = "compacto"; bx.textContent = "✕"; bx.title = "Apagar";
-      bx.style.marginLeft = "4px";
-      bx.addEventListener("click", (ev) => { ev.stopPropagation(); remover(a.id); });
-      td.append(bt, bx);
-      tb.appendChild(tr);
-    }
+    atualizarSelecao();
     desenharTiques();
+  }
+
+  // As acoes que eram os botoes de cada linha da tabela: aparecem so quando ha selecao,
+  // e coladas no video, que e onde o olho ja esta.
+  function atualizarSelecao() {
+    const a = estado.anotacoes.find(q => q.id === selecionado);
+    $("selInfo").hidden = !a;
+    $("btIrSel").disabled = !a;
+    if (!a) return;
+    $("selCor").style.background = a.cor;
+    $("selTipo").textContent = a.tipo;
+    $("selTempo").textContent = `${fmtTempo(a.t)} · ${fmtTol(tolDe(a))}`;
   }
 
   function desenharTiques() {
@@ -1144,6 +1141,14 @@
     }
   }
 
+  function alternarLateral(mostrar) {
+    const recolher = mostrar === undefined ? !$("app").classList.contains("recolhida") : !mostrar;
+    $("app").classList.toggle("recolhida", recolher);
+    try { localStorage.setItem(CHAVE_LATERAL, recolher ? "1" : "0"); } catch (err) {}
+    // a transicao da barra dispara o ResizeObserver quadro a quadro; isto e so o empurrao inicial
+    ajustarPalco();
+  }
+
   function esquecerVideo(it) {
     biblioteca = biblioteca.filter(x => x.imp !== it.imp);
     salvarBiblioteca();
@@ -1161,7 +1166,7 @@
       d.className = "item" + (it.imp === impressao ? " atual" : "");
 
       const b = document.createElement("button");
-      b.textContent = it.nome.length > 44 ? `${it.nome.slice(0, 42)}…` : it.nome;
+      b.textContent = it.nome;          // o corte fica com o CSS, que sabe a largura real
       b.title = [
         it.nome,
         it.origem === "url" ? "link" : "arquivo do disco",
@@ -1362,6 +1367,19 @@
       const a = estado.anotacoes.find(q => q.id === selecionado);
       if (a) irPara(a.t);
     });
+    $("btRecolocar").addEventListener("click", () => {
+      const a = estado.anotacoes.find(q => q.id === selecionado);
+      if (!a) return;
+      empilhar();
+      a.t = $("video").currentTime;
+      salvar(); atualizarPainel(); assinatura = ""; agendarRender();
+    });
+    $("btApagarSel").addEventListener("click", () => {
+      if (selecionado !== null) remover(selecionado);
+    });
+
+    $("btAbrirLateral").addEventListener("click", () => alternarLateral());
+    $("btFecharLateral").addEventListener("click", () => alternarLateral(false));
     $("btLimparTudo").addEventListener("click", () => {
       if (!estado.anotacoes.length) return;
       if (!confirm(`Apagar as ${estado.anotacoes.length} anotações? (dá para desfazer com Ctrl+Z)`)) return;
@@ -1377,7 +1395,9 @@
     tela.addEventListener("pointercancel", aoSoltar);
     tela.addEventListener("contextmenu", (e) => { if (modoRecorte) e.preventDefault(); });
 
-    new ResizeObserver(() => { assinatura = ""; agendarRender(); }).observe($("palco"));
+    // observa a area, nao o palco: o palco e absoluto e nao influi no tamanho dela,
+    // entao nao ha risco de laco entre medir e redimensionar
+    new ResizeObserver(() => { ajustarPalco(); assinatura = ""; agendarRender(); }).observe($("grade"));
 
     document.addEventListener("dragover", (e) => e.preventDefault());
     document.addEventListener("drop", (e) => {
@@ -1400,6 +1420,11 @@
     document.addEventListener("keydown", (e) => {
       const t = e.target;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+
+      // a lateral recolhe mesmo sem video aberto, por isso vem antes da barreira do vw
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === "b") {
+        e.preventDefault(); alternarLateral(); return;
+      }
       if (!vw) return;
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); desfazer(); return; }
@@ -1417,7 +1442,7 @@
       else if (e.key === "Escape") {
         if (modoRecorte) sairRecorte(false);
         else if (ferramenta !== "selecionar") voltarParaSelecao();
-        else { selecionado = null; assinatura = ""; agendarRender(); }
+        else { selecionado = null; atualizarSelecao(); assinatura = ""; agendarRender(); }
       }
     });
 
@@ -1435,6 +1460,11 @@
     montarCores();
     biblioteca = lerBiblioteca();
     desenharBiblioteca();
+    // sem nenhum vídeo salvo ainda, a lateral se abre já mostrando por onde começar
+    let recolhida = false;
+    try { recolhida = localStorage.getItem(CHAVE_LATERAL) === "1"; } catch (err) {}
+    $("app").classList.toggle("recolhida", recolhida);
+    $("menuAdd").open = biblioteca.length === 0;
     atualizarRotuloEsp();
     atualizarBotoesHist();
   }

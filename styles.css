@@ -8,6 +8,7 @@
   --res: #111827;     --alvo: #2563eb;     --alvo-final: #7c3aed;
   --real: #0891b2;    --ok: #16a34a;
   --pegar: #ea580c;   --manter: #64748b;
+  --fundo-palco: #0a0c0f;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -19,89 +20,156 @@
     --res: #f3f4f6;   --alvo: #60a5fa;     --alvo-final: #c084fc;
     --real: #22d3ee;  --ok: #4ade80;
     --pegar: #fb923c; --manter: #94a3b8;
+    --fundo-palco: #000;
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body { height: 100%; }
 body {
-  margin: 0; background: var(--bg); color: var(--texto);
+  margin: 0; background: var(--bg); color: var(--texto); overflow: hidden;
   font: 14px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
 }
-header { padding: 16px 20px 0; }
-h1 { font-size: 17px; margin: 0 0 2px; font-weight: 650; }
-.sub { color: var(--fraco); font-size: 13px; margin: 0 0 14px; }
-.painel {
-  background: var(--painel); border: 1px solid var(--borda);
-  border-radius: 10px; padding: 14px; margin: 0 20px 14px;
-}
-.linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.linha + .linha { margin-top: 10px; }
+
+/* ================================================================ esqueleto
+   A tela inteira é uma coluna: barras finas em cima e embaixo, e o vídeo
+   ocupando toda a folga que sobrar. Nada rola a página. */
+.app { display: flex; height: 100%; position: relative; overflow: hidden; }
+/* overflow-y auto e só a rede de segurança: numa janela muito baixa as barras rolam em
+   vez de cortar o transporte. Com espaço normal nada rola. */
+.principal { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden auto; }
+
+/* ================================================================ controles */
 button {
-  font: inherit; padding: 6px 13px; border-radius: 6px; cursor: pointer;
+  font: inherit; padding: 5px 11px; border-radius: 6px; cursor: pointer;
   border: 1px solid var(--borda); background: var(--painel); color: var(--texto);
 }
 button:hover:not(:disabled) { border-color: var(--eu); }
+button:disabled { opacity: .4; cursor: default; }
 button.primario { background: var(--eu); border-color: var(--eu); color: #fff; font-weight: 600; }
-button:disabled { opacity: .45; cursor: default; }
-button.compacto { padding: 4px 8px; font-size: 12px; }
+button.compacto { padding: 3px 8px; font-size: 12px; }
+button.icone { padding: 4px 9px; line-height: 1; }
 select, input[type=range], input[type=text], input[type=number] { font: inherit; accent-color: var(--eu); }
 select, input[type=text], input[type=number] {
-  padding: 5px 8px; border-radius: 6px; border: 1px solid var(--borda);
+  padding: 4px 7px; border-radius: 6px; border: 1px solid var(--borda);
   background: var(--painel); color: var(--texto);
 }
+input[type=number] { width: 58px; }
 label.chk {
   display: inline-flex; gap: 5px; align-items: center; cursor: pointer;
   -webkit-user-select: none; user-select: none;
 }
-.rot { color: var(--fraco); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-.grade { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 14px; margin: 0 20px 20px; }
-@media (max-width: 1080px) { .grade { grid-template-columns: minmax(0, 1fr); } }
-table { border-collapse: collapse; width: 100%; font-size: 12px; }
-th, td { text-align: right; padding: 4px 5px; border-bottom: 1px solid var(--borda); white-space: nowrap; }
-th { color: var(--fraco); font-weight: 600; font-size: 11px; text-transform: uppercase; }
-td:first-child, th:first-child { text-align: left; }
-.tabela-rolar { overflow-x: auto; max-height: 420px; overflow-y: auto; }
-tr.sel td { background: color-mix(in srgb, var(--eu) 16%, transparent); }
-tr.alvo td { cursor: pointer; }
-.chip {
-  display: inline-block; width: 9px; height: 9px; border-radius: 2px;
-  margin-right: 6px; vertical-align: baseline;
-}
-/* ---- lista de vídeos salvos ---- */
-.biblio { display: flex; flex-wrap: wrap; gap: 6px; }
-.item {
-  display: inline-flex; align-items: center; overflow: hidden;
-  border: 1px solid var(--borda); border-radius: 999px; background: var(--painel);
-}
-.item button { border: 0; border-radius: 0; background: none; padding: 4px 12px; font-size: 12px; }
-.item button:hover:not(:disabled) { background: color-mix(in srgb, var(--eu) 15%, transparent); }
-.item button.fechar { padding: 4px 10px 4px 6px; color: var(--fraco); }
-.item button.fechar:hover { background: color-mix(in srgb, var(--adv) 20%, transparent); color: var(--adv); }
-.item.atual { border-color: var(--eu); background: color-mix(in srgb, var(--eu) 12%, transparent); }
-.item.atual button:first-child { font-weight: 600; }
-
-.resumo { font: 12px/1.7 ui-monospace, Consolas, monospace; color: var(--fraco); }
-.resumo b { color: var(--texto); font-weight: 600; }
+.rot { color: var(--fraco); font-size: 12px; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
 .aviso { color: var(--adv); }
 .bom { color: var(--ok); }
-.vazio { color: var(--fraco); text-align: center; padding: 60px 10px; }
-details summary { cursor: pointer; color: var(--fraco); font-size: 13px; }
-.legenda { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--fraco); margin-top: 10px; }
-code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
+.chip { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
 
-/* ---- palco: o video e o SVG ocupam exatamente a mesma caixa ---- */
-#palco { position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
-#video { display: block; width: 100%; height: 100%; object-fit: fill; }
-#tela  { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
-         touch-action: none; -webkit-user-select: none; user-select: none; }
-#tela.desenhando { cursor: crosshair; }
-#tela.recortando  { cursor: crosshair; }
-#entradaTexto {
-  position: absolute; z-index: 3; padding: 3px 6px; font: inherit;
-  border: 1px solid var(--eu); border-radius: 4px;
-  background: var(--painel); color: var(--texto); min-width: 140px;
+/* ================================================================ barra lateral */
+.lateral {
+  flex: 0 0 264px; width: 264px; z-index: 20;
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 12px; overflow-y: auto;
+  background: var(--painel); border-right: 1px solid var(--borda);
+  transition: margin-left .16s ease;
 }
+.app.recolhida .lateral { margin-left: -264px; }
+.lateral-topo { display: flex; align-items: center; justify-content: space-between; }
+.lateral-topo strong { font-size: 15px; }
+.secao { display: flex; flex-direction: column; gap: 7px; }
+.secao .botoes { display: flex; flex-wrap: wrap; gap: 5px; }
+.secao .botoes button { flex: 1 1 auto; font-size: 12px; padding: 4px 8px; }
+.linha-ajuste { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 
-/* ---- camada dos textos: divs HTML por cima do video, sob o SVG ---- */
+/* o único botão colorido da lateral: é por onde todo vídeo entra */
+.add > summary {
+  list-style: none; cursor: pointer; text-align: center; font-weight: 600;
+  padding: 7px 12px; border-radius: 7px;
+  background: var(--eu); color: #fff;
+}
+.add > summary::-webkit-details-marker { display: none; }
+.add[open] > summary { border-radius: 7px 7px 0 0; }
+.add-corpo {
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 9px; border: 1px solid var(--borda); border-top: 0; border-radius: 0 0 7px 7px;
+}
+.add-corpo input[type=file] { font-size: 12px; max-width: 100%; }
+.add-link { display: flex; gap: 5px; }
+.add-link input { flex: 1; min-width: 0; }
+
+.biblio { display: flex; flex-direction: column; gap: 3px; }
+.item {
+  display: flex; align-items: center; border-radius: 7px;
+  border: 1px solid transparent;
+}
+.item button {
+  border: 0; background: none; border-radius: 0; padding: 6px 8px; font-size: 12.5px;
+  text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.item button:first-child { flex: 1; min-width: 0; }
+.item:hover { background: color-mix(in srgb, var(--texto) 7%, transparent); }
+.item button.fechar { color: var(--fraco); opacity: 0; padding: 6px 9px; }
+.item:hover button.fechar { opacity: 1; }
+.item button.fechar:hover { color: var(--adv); }
+.item.atual {
+  border-color: color-mix(in srgb, var(--eu) 45%, transparent);
+  background: color-mix(in srgb, var(--eu) 13%, transparent);
+}
+.item.atual button:first-child { font-weight: 600; }
+.dica { margin: 8px 2px 0; line-height: 1.45; }
+
+.ajuda { margin-top: auto; }
+.ajuda summary { cursor: pointer; color: var(--fraco); font-size: 12px; }
+.ajuda p { color: var(--fraco); font-size: 12px; line-height: 1.5; }
+.ajuda .teclas { line-height: 1.9; }
+.ajuda b { color: var(--texto); font-weight: 600; }
+
+/* ================================================================ barras da coluna principal */
+.topo {
+  display: flex; align-items: center; gap: 10px; padding: 7px 12px;
+  border-bottom: 1px solid var(--borda); background: var(--painel);
+}
+.topo h1 { font-size: 14px; margin: 0; font-weight: 650; white-space: nowrap; }
+.topo .status {
+  flex: 1; min-width: 0; color: var(--fraco); font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.topo .status b { color: var(--texto); font-weight: 600; }
+#statusArquivo { white-space: nowrap; }
+
+.barra {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  padding: 7px 12px; border-bottom: 1px solid var(--borda); background: var(--painel);
+}
+.barra .sep { width: 1px; align-self: stretch; background: var(--borda); margin: 0 3px; }
+
+/* sem recorte nada funciona: enquanto faltar, esta é a barra que grita */
+.recorte.chamada {
+  background: color-mix(in srgb, var(--eu) 12%, var(--painel));
+  border-bottom-color: color-mix(in srgb, var(--eu) 40%, transparent);
+}
+.recorte:not(.chamada) #btRecortar { font-size: 12px; padding: 3px 8px; }
+
+.ferr { display: flex; gap: 3px; flex-wrap: wrap; }
+.ferr button { padding: 5px 9px; font-size: 12.5px; }
+.ferr button.ativa { background: var(--eu); border-color: var(--eu); color: #fff; font-weight: 600; }
+.cores { display: flex; gap: 4px; }
+.cores button { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 2px solid var(--borda); }
+.cores button.ativa { border-color: var(--texto); box-shadow: 0 0 0 2px var(--painel) inset; }
+#slEsp { width: 92px; }
+
+/* ================================================================ palco
+   O vídeo é o elemento principal: fica com toda a altura que sobra e é
+   dimensionado pelo JS para caber inteiro, sem deformar. */
+.palco-area { flex: 1; min-height: 140px; position: relative; background: var(--fundo-palco); }
+#palco { position: absolute; inset: 0; margin: auto; overflow: hidden; background: #000; }
+#video { display: block; width: 100%; height: 100%; object-fit: fill; }
+#tela {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  touch-action: none; -webkit-user-select: none; user-select: none;
+}
+#tela.desenhando, #tela.recortando { cursor: crosshair; }
 #camadaTexto { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .rotulo {
   position: absolute; transform: translate(-50%, -50%);
@@ -109,12 +177,25 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
   font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
   text-shadow: 0 0 3px var(--painel), 0 0 3px var(--painel), 0 0 6px var(--painel);
 }
+#entradaTexto {
+  position: absolute; z-index: 3; padding: 3px 6px; font: inherit;
+  border: 1px solid var(--eu); border-radius: 4px;
+  background: var(--painel); color: var(--texto); min-width: 140px;
+}
 
-/* ---- linha do tempo ---- */
-.tempo-caixa { flex: 1; min-width: 220px; }
+.vazio {
+  flex: 1; display: flex; flex-direction: column; gap: 6px;
+  align-items: center; justify-content: center; color: var(--fraco); text-align: center;
+}
+.vazio p { margin: 0; }
+
+/* ================================================================ transporte, colado no vídeo */
+.transporte { border-bottom: 0; border-top: 1px solid var(--borda); }
+.transporte .tocar { min-width: 42px; font-size: 15px; }
+.tempo-caixa { flex: 1; min-width: 200px; }
 .tempo-caixa input[type=range] { width: 100%; display: block; }
 .tiques {
-  position: relative; height: 13px; margin-top: 2px;
+  position: relative; height: 11px; margin-top: 1px;
   background: var(--bg); border: 1px solid var(--borda); border-radius: 4px;
 }
 .tique {
@@ -122,14 +203,16 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
   border-radius: 2px; cursor: pointer;
 }
 .tique:hover { outline: 1px solid var(--texto); }
-.relogio { font: 13px/1 ui-monospace, Consolas, monospace; min-width: 148px; }
+.relogio { font: 13px/1 ui-monospace, Consolas, monospace; min-width: 142px; }
+#lbRegua { font-family: ui-monospace, Consolas, monospace; }
 
-/* ---- barra de ferramentas ---- */
-.ferr { display: flex; gap: 4px; flex-wrap: wrap; }
-.ferr button { padding: 6px 10px; }
-.ferr button.ativa { background: var(--eu); border-color: var(--eu); color: #fff; font-weight: 600; }
-.cores { display: flex; gap: 5px; }
-.cores button {
-  width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid var(--borda);
+/* ações da anotação selecionada: só aparecem quando há uma */
+.selinfo {
+  border-bottom: 0; border-top: 1px solid var(--borda);
+  background: color-mix(in srgb, var(--eu) 9%, var(--painel));
 }
-.cores button.ativa { border-color: var(--texto); box-shadow: 0 0 0 2px var(--painel) inset; }
+
+@media (max-width: 760px) {
+  .lateral { position: absolute; top: 0; bottom: 0; box-shadow: 0 0 24px rgba(0,0,0,.28); }
+  .app:not(.recolhida) .principal { filter: brightness(.97); }
+}

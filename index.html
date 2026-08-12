@@ -8,170 +8,176 @@
 </head>
 <body>
 
-<header>
-  <h1>Analisador de vídeo da partida</h1>
-  <p class="sub">Carregue a gravação, delimite <b>uma vez</b> a área do campo e desenhe sobre qualquer quadro.
-     As anotações são guardadas em unidades reais do campo do Lugo
-     (<code>0..20000 × 0..10000</code>), presas ao instante em que foram feitas.
-     Nada é enviado para lugar nenhum &mdash; o vídeo é lido direto do disco pelo navegador.</p>
-</header>
+<div class="app" id="app">
 
-<div class="painel">
-  <div class="linha">
-    <span class="rot">Vídeo</span>
-    <button id="btEscolher" hidden title="Abrir um vídeo do disco — este navegador consegue reabri-lo depois sem novo upload">Abrir vídeo…</button>
-    <input type="file" id="arqVideo" accept="video/*" title="Arquivo de vídeo da partida">
-    <input type="text" id="txtVideoUrl" placeholder="https://.../video.mp4" size="34" title="Link do vídeo">
-    <button id="btAbrirUrl" class="compacto">Abrir link</button>
-    <span class="rot" style="margin-left:8px">Anotações</span>
-    <button id="btExportar" disabled>Exportar JSON</button>
-    <button id="btImportar">Importar JSON</button>
-    <input type="file" id="arqJson" accept="application/json,.json" hidden>
-    <span id="statusArquivo" class="rot"></span>
-  </div>
-  <div class="linha rot">
-    Você também pode arrastar o vídeo (ou um <code>.json</code> de anotações) para qualquer lugar da página.
-  </div>
-</div>
-
-<div class="painel" id="painelBiblio" hidden>
-  <div class="linha">
-    <span class="rot">Vídeos salvos</span>
-    <div class="biblio" id="biblio"></div>
-  </div>
-  <div class="linha rot" id="dicaBiblio"></div>
-</div>
-
-<div class="painel" id="painelTempo" hidden>
-  <div class="linha">
-    <span class="rot">Tempo</span>
-    <button id="btQuadroAnt" title="Quadro anterior (←)">‹‹</button>
-    <button id="btSegAnt" title="1 segundo atrás (Shift+←)">‹</button>
-    <button class="primario" id="btPlay" title="Tocar / pausar (espaço)">▶</button>
-    <button id="btSegProx" title="1 segundo à frente (Shift+→)">›</button>
-    <button id="btQuadroProx" title="Próximo quadro (→)">››</button>
-    <div class="tempo-caixa">
-      <input type="range" id="slTempo" min="0" max="0" step="0.001" value="0">
-      <div class="tiques" id="tiques" title="Cada tique é uma anotação; clique para ir até ela"></div>
+  <aside class="lateral" id="lateral">
+    <div class="lateral-topo">
+      <strong>Vídeos</strong>
+      <button id="btFecharLateral" class="icone" title="Recolher (B)">‹</button>
     </div>
-    <strong class="relogio" id="relogio">0:00.000</strong>
-  </div>
-  <div class="linha">
-    <span class="rot">Velocidade</span>
-    <select id="selVel">
-      <option value="0.25">0,25×</option>
-      <option value="0.5">0,5×</option>
-      <option value="1" selected>1×</option>
-      <option value="2">2×</option>
-    </select>
-    <span class="rot" style="margin-left:8px">Quadros/s</span>
-    <select id="selFps" title="Usado para o passo quadro a quadro">
-      <option value="auto" selected>automático</option>
-      <option value="24">24</option>
-      <option value="25">25</option>
-      <option value="30">30</option>
-      <option value="50">50</option>
-      <option value="60">60</option>
-    </select>
-    <span id="lbFps" class="rot"></span>
-  </div>
+
+    <details class="add" id="menuAdd">
+      <summary>+ Adicionar vídeo</summary>
+      <div class="add-corpo">
+        <button id="btEscolher" hidden>Do computador…</button>
+        <input type="file" id="arqVideo" accept="video/*">
+        <div class="add-link">
+          <input type="text" id="txtVideoUrl" placeholder="https://…/video.mp4" title="Link do vídeo">
+          <button id="btAbrirUrl">Abrir link</button>
+        </div>
+      </div>
+    </details>
+
+    <div id="painelBiblio" hidden>
+      <div class="biblio" id="biblio"></div>
+      <p class="rot dica" id="dicaBiblio"></p>
+    </div>
+
+    <div class="secao">
+      <span class="rot">Anotações</span>
+      <div class="botoes">
+        <button id="btExportar" disabled>Exportar JSON</button>
+        <button id="btImportar">Importar JSON</button>
+        <input type="file" id="arqJson" accept="application/json,.json" hidden>
+        <button id="btLimparTudo">Apagar todas</button>
+      </div>
+    </div>
+
+    <div class="secao">
+      <span class="rot">Ajustes</span>
+      <label class="chk"><input type="checkbox" id="ckGrade"> sobrepor linhas do campo</label>
+      <label class="chk"><input type="checkbox" id="ckTrava" checked> travar proporção 2:1 no recorte</label>
+      <div class="linha-ajuste">
+        <span class="rot">Quadros/s</span>
+        <select id="selFps" title="Usado para o passo quadro a quadro">
+          <option value="auto" selected>automático</option>
+          <option value="24">24</option>
+          <option value="25">25</option>
+          <option value="30">30</option>
+          <option value="50">50</option>
+          <option value="60">60</option>
+        </select>
+        <span id="lbFps" class="rot"></span>
+      </div>
+    </div>
+
+    <details class="ajuda">
+      <summary>Como funciona</summary>
+      <p>Delimite <b>uma vez</b> a área do campo e desenhe sobre qualquer quadro. As anotações
+         são guardadas em unidades reais do campo do Lugo (<code>0..20000 × 0..10000</code>),
+         presas ao instante em que foram feitas. Nada é enviado para lugar nenhum — o vídeo é
+         lido direto do disco pelo navegador.</p>
+      <p>Arraste um vídeo (ou um <code>.json</code> de anotações) para qualquer lugar da página.</p>
+      <p class="teclas">
+        <b>← →</b> quadro · <b>Shift + ← →</b> um segundo · <b>espaço</b> tocar/pausar<br>
+        <b>1…9</b> ou a inicial troca a ferramenta · <b>Esc</b> volta para Selecionar<br>
+        <b>Delete</b> apaga o selecionado · <b>Ctrl+Z / Ctrl+Y</b> desfazer/refazer · <b>B</b> recolhe esta barra
+      </p>
+    </details>
+  </aside>
+
+  <main class="principal">
+
+    <header class="topo">
+      <button id="btAbrirLateral" class="icone" title="Vídeos salvos (B)">☰</button>
+      <h1>Analisador de vídeo</h1>
+      <span class="status" id="resumo"></span>
+      <span id="statusArquivo" class="rot"></span>
+    </header>
+
+    <div class="barra recorte" id="painelRecorte" hidden>
+      <button class="primario" id="btRecortar">Definir recorte do campo</button>
+      <button id="btConfirmar" hidden>Confirmar recorte</button>
+      <button id="btCancelarRec" hidden>Cancelar</button>
+      <span id="statusRecorte" class="rot"></span>
+      <span class="rot" id="dicaRecorte">Arraste sobre a área do campo; depois ajuste pelas alças.</span>
+    </div>
+
+    <div class="barra ferramentas" id="painelFerr" hidden>
+      <div class="ferr" id="barraFerr">
+        <button data-ferr="selecionar" class="ativa" title="Selecionar (1 ou V · Esc volta para cá)">Selecionar</button>
+        <button data-ferr="seta" title="Seta (2 ou S)">Seta</button>
+        <button data-ferr="linha" title="Linha (3 ou L)">Linha</button>
+        <button data-ferr="livre" title="Mão livre (4 ou M)">Livre</button>
+        <button data-ferr="retangulo" title="Retângulo (5 ou R)">Retângulo</button>
+        <button data-ferr="elipse" title="Elipse (6 ou E)">Elipse</button>
+        <button data-ferr="zona" title="Zona (7 ou Z)">Zona</button>
+        <button data-ferr="texto" title="Texto (8 ou T)">Texto</button>
+        <button data-ferr="jogador" title="Jogador (9 ou J)">Jogador</button>
+      </div>
+
+      <span class="sep"></span>
+      <div class="cores" id="barraCores"></div>
+      <input type="range" id="slEsp" min="40" max="400" step="10" value="120"
+             title="Espessura do traço, em unidades de campo — com um texto selecionado, muda o corpo da fonte">
+      <span id="lbEsp" class="rot"></span>
+
+      <label class="chk" id="campoPreench" hidden><input type="checkbox" id="ckPreench"> preencher</label>
+      <label class="chk" id="campoNum" hidden><span class="rot">Nº</span>
+        <input type="number" id="numJogador" value="1" min="0" max="99"></label>
+
+      <span class="sep"></span>
+      <select id="selTol" title="Por quanto tempo, antes e depois do instante, a anotação fica visível">
+        <option value="0.1">±0,1 s</option>
+        <option value="0.25">±0,25 s</option>
+        <option value="0.5" selected>±0,5 s</option>
+        <option value="1">±1 s</option>
+        <option value="2">±2 s</option>
+        <option value="Infinity">sempre visível</option>
+      </select>
+      <button id="btDesfazer" class="icone" title="Desfazer (Ctrl+Z)">↶</button>
+      <button id="btRefazer" class="icone" title="Refazer (Ctrl+Y)">↷</button>
+    </div>
+
+    <div class="palco-area" id="grade" hidden>
+      <div id="palco">
+        <video id="video" playsinline></video>
+        <div id="camadaTexto"></div>
+        <svg id="tela" preserveAspectRatio="none">
+          <g id="gCampo"></g>
+          <g id="gAnot"></g>
+          <g id="gRecorte"></g>
+        </svg>
+      </div>
+    </div>
+
+    <div class="vazio" id="vazio">
+      <p>Nenhum vídeo carregado.</p>
+      <p class="rot">Use <b>+ Adicionar vídeo</b> na barra lateral (<b>☰</b> abre, <b>B</b> alterna),
+         ou arraste um arquivo para cá.</p>
+    </div>
+
+    <div class="barra transporte" id="painelTempo" hidden>
+      <button id="btQuadroAnt" class="icone" title="Quadro anterior (←)">‹‹</button>
+      <button id="btSegAnt" class="icone" title="1 segundo atrás (Shift+←)">‹</button>
+      <button class="primario tocar" id="btPlay" title="Tocar / pausar (espaço)">▶</button>
+      <button id="btSegProx" class="icone" title="1 segundo à frente (Shift+→)">›</button>
+      <button id="btQuadroProx" class="icone" title="Próximo quadro (→)">››</button>
+      <div class="tempo-caixa">
+        <input type="range" id="slTempo" min="0" max="0" step="0.001" value="0">
+        <div class="tiques" id="tiques" title="Cada tique é uma anotação; clique para ir até ela"></div>
+      </div>
+      <strong class="relogio" id="relogio">0:00.000</strong>
+      <select id="selVel" title="Velocidade">
+        <option value="0.25">0,25×</option>
+        <option value="0.5">0,5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+      </select>
+      <span id="lbRegua" class="rot"></span>
+    </div>
+
+    <div class="barra selinfo" id="selInfo" hidden>
+      <span class="chip" id="selCor"></span>
+      <b id="selTipo"></b>
+      <span class="rot" id="selTempo"></span>
+      <button id="btIrSel" class="compacto">Ir até ela</button>
+      <button id="btRecolocar" class="compacto" title="Passar a anotação para o instante atual">Recolocar aqui</button>
+      <button id="btApagarSel" class="compacto" title="Delete">Apagar</button>
+    </div>
+
+  </main>
 </div>
-
-<div class="painel" id="painelRecorte" hidden>
-  <div class="linha">
-    <span class="rot">Recorte do campo</span>
-    <button class="primario" id="btRecortar">Definir recorte do campo</button>
-    <button id="btConfirmar" hidden>Confirmar recorte</button>
-    <button id="btCancelarRec" hidden>Cancelar</button>
-    <label class="chk"><input type="checkbox" id="ckTrava" checked> travar proporção 2:1</label>
-    <label class="chk"><input type="checkbox" id="ckGrade"> sobrepor linhas do campo</label>
-    <span id="statusRecorte" class="rot"></span>
-  </div>
-  <div class="linha rot" id="dicaRecorte">
-    Arraste sobre a área do campo. Depois ajuste pelas alças (as setas do teclado movem 1 px, com Shift 10 px).
-  </div>
-</div>
-
-<div class="painel" id="painelFerr" hidden>
-  <div class="linha">
-    <span class="rot">Ferramenta</span>
-    <div class="ferr" id="barraFerr">
-      <button data-ferr="selecionar" class="ativa" title="Selecionar (1 ou V · Esc volta para cá)">Selecionar</button>
-      <button data-ferr="seta" title="Seta (2 ou S)">Seta</button>
-      <button data-ferr="linha" title="Linha (3 ou L)">Linha</button>
-      <button data-ferr="livre" title="Mão livre (4 ou M)">Livre</button>
-      <button data-ferr="retangulo" title="Retângulo (5 ou R)">Retângulo</button>
-      <button data-ferr="elipse" title="Elipse (6 ou E)">Elipse</button>
-      <button data-ferr="zona" title="Zona (7 ou Z)">Zona</button>
-      <button data-ferr="texto" title="Texto (8 ou T)">Texto</button>
-      <button data-ferr="jogador" title="Jogador (9 ou J)">Jogador</button>
-    </div>
-  </div>
-  <div class="linha">
-    <span class="rot">Cor</span>
-    <div class="cores" id="barraCores"></div>
-    <span class="rot" style="margin-left:8px">Espessura</span>
-    <input type="range" id="slEsp" min="40" max="400" step="10" value="120" style="width:130px"
-           title="Espessura do traço, em unidades de campo — com um texto selecionado, muda o corpo da fonte">
-    <span id="lbEsp" class="rot"></span>
-    <label class="chk" style="margin-left:8px"><input type="checkbox" id="ckPreench"> preencher</label>
-    <span class="rot" style="margin-left:8px">Nº</span>
-    <input type="number" id="numJogador" value="1" min="0" max="99" style="width:64px">
-  </div>
-  <div class="linha">
-    <span class="rot">Tolerância</span>
-    <select id="selTol" title="Por quanto tempo, antes e depois do instante, a anotação fica visível">
-      <option value="0.1">±0,1 s</option>
-      <option value="0.25">±0,25 s</option>
-      <option value="0.5" selected>±0,5 s</option>
-      <option value="1">±1 s</option>
-      <option value="2">±2 s</option>
-      <option value="Infinity">sempre visível</option>
-    </select>
-    <button id="btDesfazer" title="Ctrl+Z">↶ Desfazer</button>
-    <button id="btRefazer" title="Ctrl+Y">↷ Refazer</button>
-    <span id="lbRegua" class="rot" style="margin-left:8px"></span>
-  </div>
-</div>
-
-<div class="grade" id="grade" hidden>
-  <div class="painel" style="margin:0">
-    <div id="palco">
-      <video id="video" playsinline></video>
-      <div id="camadaTexto"></div>
-      <svg id="tela" preserveAspectRatio="none">
-        <g id="gCampo"></g>
-        <g id="gAnot"></g>
-        <g id="gRecorte"></g>
-      </svg>
-    </div>
-    <div class="legenda">
-      <span>← / → quadro</span>
-      <span>Shift + ← / → um segundo</span>
-      <span>espaço tocar/pausar</span>
-      <span>Delete apaga o selecionado</span>
-      <span>Ctrl+Z / Ctrl+Y desfazer/refazer</span>
-      <span>1…9 ou a inicial troca a ferramenta</span>
-      <span>Esc volta para Selecionar</span>
-    </div>
-  </div>
-
-  <div class="painel" style="margin:0">
-    <div id="resumo" class="resumo"></div>
-    <div class="linha" style="margin-top:10px">
-      <button id="btIrSel" class="compacto" disabled>Ir para a selecionada</button>
-      <button id="btLimparTudo" class="compacto">Apagar todas</button>
-    </div>
-    <div class="tabela-rolar" style="margin-top:12px">
-      <table id="tabela">
-        <thead><tr><th>t</th><th>tipo</th><th>tol</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<div class="vazio" id="vazio">Nenhum vídeo carregado.</div>
 
 <script src="app.js"></script>
 </body>
