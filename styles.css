@@ -1,0 +1,122 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;      --painel: #fff;      --borda: #d8dce3;
+  --texto: #1a1d23;   --fraco: #6b7280;
+  --gramado: #e8f0e6; --linha-campo: #b7c6b4;
+  --eu: #2563eb;      --bola: #f59e0b;     --adv: #dc2626;
+  --rep: #dc2626;     --atr: #16a34a;      --outro: #9333ea;
+  --res: #111827;     --alvo: #2563eb;     --alvo-final: #7c3aed;
+  --real: #0891b2;    --ok: #16a34a;
+  --pegar: #ea580c;   --manter: #64748b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;    --painel: #1c1f26;   --borda: #333944;
+    --texto: #e6e8ec; --fraco: #9aa3b2;
+    --gramado: #1b2620; --linha-campo: #3b4a41;
+    --eu: #60a5fa;    --bola: #fbbf24;     --adv: #f87171;
+    --rep: #f87171;   --atr: #4ade80;      --outro: #c084fc;
+    --res: #f3f4f6;   --alvo: #60a5fa;     --alvo-final: #c084fc;
+    --real: #22d3ee;  --ok: #4ade80;
+    --pegar: #fb923c; --manter: #94a3b8;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--texto);
+  font: 14px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+}
+header { padding: 16px 20px 0; }
+h1 { font-size: 17px; margin: 0 0 2px; font-weight: 650; }
+.sub { color: var(--fraco); font-size: 13px; margin: 0 0 14px; }
+.painel {
+  background: var(--painel); border: 1px solid var(--borda);
+  border-radius: 10px; padding: 14px; margin: 0 20px 14px;
+}
+.linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.linha + .linha { margin-top: 10px; }
+button {
+  font: inherit; padding: 6px 13px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--borda); background: var(--painel); color: var(--texto);
+}
+button:hover:not(:disabled) { border-color: var(--eu); }
+button.primario { background: var(--eu); border-color: var(--eu); color: #fff; font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; }
+button.compacto { padding: 4px 8px; font-size: 12px; }
+select, input[type=range], input[type=text], input[type=number] { font: inherit; accent-color: var(--eu); }
+select, input[type=text], input[type=number] {
+  padding: 5px 8px; border-radius: 6px; border: 1px solid var(--borda);
+  background: var(--painel); color: var(--texto);
+}
+label.chk {
+  display: inline-flex; gap: 5px; align-items: center; cursor: pointer;
+  -webkit-user-select: none; user-select: none;
+}
+.rot { color: var(--fraco); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.grade { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 14px; margin: 0 20px 20px; }
+@media (max-width: 1080px) { .grade { grid-template-columns: minmax(0, 1fr); } }
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { text-align: right; padding: 4px 5px; border-bottom: 1px solid var(--borda); white-space: nowrap; }
+th { color: var(--fraco); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+td:first-child, th:first-child { text-align: left; }
+.tabela-rolar { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+tr.sel td { background: color-mix(in srgb, var(--eu) 16%, transparent); }
+tr.alvo td { cursor: pointer; }
+.chip {
+  display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  margin-right: 6px; vertical-align: baseline;
+}
+.resumo { font: 12px/1.7 ui-monospace, Consolas, monospace; color: var(--fraco); }
+.resumo b { color: var(--texto); font-weight: 600; }
+.aviso { color: var(--adv); }
+.bom { color: var(--ok); }
+.vazio { color: var(--fraco); text-align: center; padding: 60px 10px; }
+details summary { cursor: pointer; color: var(--fraco); font-size: 13px; }
+.legenda { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--fraco); margin-top: 10px; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
+
+/* ---- palco: o video e o SVG ocupam exatamente a mesma caixa ---- */
+#palco { position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
+#video { display: block; width: 100%; height: 100%; object-fit: fill; }
+#tela  { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+         touch-action: none; -webkit-user-select: none; user-select: none; }
+#tela.desenhando { cursor: crosshair; }
+#tela.recortando  { cursor: crosshair; }
+#entradaTexto {
+  position: absolute; z-index: 3; padding: 3px 6px; font: inherit;
+  border: 1px solid var(--eu); border-radius: 4px;
+  background: var(--painel); color: var(--texto); min-width: 140px;
+}
+
+/* ---- camada dos textos: divs HTML por cima do video, sob o SVG ---- */
+#camadaTexto { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.rotulo {
+  position: absolute; transform: translate(-50%, -50%);
+  white-space: pre; line-height: 1.15; font-weight: 600;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  text-shadow: 0 0 3px var(--painel), 0 0 3px var(--painel), 0 0 6px var(--painel);
+}
+
+/* ---- linha do tempo ---- */
+.tempo-caixa { flex: 1; min-width: 220px; }
+.tempo-caixa input[type=range] { width: 100%; display: block; }
+.tiques {
+  position: relative; height: 13px; margin-top: 2px;
+  background: var(--bg); border: 1px solid var(--borda); border-radius: 4px;
+}
+.tique {
+  position: absolute; top: 1px; bottom: 1px; width: 3px; margin-left: -1px;
+  border-radius: 2px; cursor: pointer;
+}
+.tique:hover { outline: 1px solid var(--texto); }
+.relogio { font: 13px/1 ui-monospace, Consolas, monospace; min-width: 148px; }
+
+/* ---- barra de ferramentas ---- */
+.ferr { display: flex; gap: 4px; flex-wrap: wrap; }
+.ferr button { padding: 6px 10px; }
+.ferr button.ativa { background: var(--eu); border-color: var(--eu); color: #fff; font-weight: 600; }
+.cores { display: flex; gap: 5px; }
+.cores button {
+  width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid var(--borda);
+}
+.cores button.ativa { border-color: var(--texto); box-shadow: 0 0 0 2px var(--painel) inset; }
