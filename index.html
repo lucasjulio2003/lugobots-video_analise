@@ -28,7 +28,18 @@
       </div>
     </details>
 
-    <div id="painelBiblio" hidden>
+    <div class="secao" id="painelBot" hidden>
+      <span class="rot">Partidas do bot no lugobots.ai</span>
+      <div class="add-link">
+        <input type="text" id="txtBot" placeholder="COR-2012" title="Nome do bot no lugobots.ai">
+        <button id="btBuscarBot">Buscar</button>
+      </div>
+      <div class="partidas" id="listaPartidas"></div>
+      <p class="rot dica" id="dicaPartidas" hidden></p>
+    </div>
+
+    <div class="secao" id="painelBiblio" hidden>
+      <span class="rot">Já abertos</span>
       <div class="biblio" id="biblio"></div>
       <p class="rot dica" id="dicaBiblio"></p>
     </div>
@@ -68,6 +79,9 @@
          presas ao instante em que foram feitas. Nada é enviado para lugar nenhum — o vídeo é
          lido direto do disco pelo navegador.</p>
       <p>Arraste um vídeo (ou um <code>.json</code> de anotações) para qualquer lugar da página.</p>
+      <p>Com a página aberta pelo <code>node servidor.js</code>, a busca por bot lista as últimas
+         partidas dele no lugobots.ai e abre a gravação com um clique. Sem o servidor esse
+         painel some, e o resto continua igual.</p>
       <p class="teclas">
         <b>← →</b> quadro · <b>Shift + ← →</b> um segundo · <b>espaço</b> tocar/pausar<br>
         <b>1…9</b> ou a inicial troca a ferramenta · <b>Esc</b> volta para Selecionar<br>

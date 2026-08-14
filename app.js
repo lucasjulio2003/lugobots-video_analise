@@ -177,14 +177,18 @@
     }
   }
 
-  function carregarVideoUrl(url) {
+  // 'extra' é o que a busca de partidas sabe e a URL não conta: um rótulo legível e uma
+  // linha de contexto, que entram na lista de vídeos como título e descrição.
+  function carregarVideoUrl(url, extra) {
     const limpa = String(url || "").trim();
     if (!limpa) return nota("Informe um link de vídeo válido.", true);
     try { new URL(limpa); } catch (_) { return nota("O link do vídeo não parece ser uma URL válida.", true); }
     carregarVideoPorFonte({
       src: limpa,
       revogavel: false,
-      nome: limpa,
+      nome: (extra && extra.titulo) || limpa,
+      titulo: (extra && extra.titulo) || "",
+      descricao: (extra && extra.descricao) || "",
       impressao: `url|${limpa}`,
       videoInfo: { nome: limpa, url: limpa, origem: "url" }
     });
@@ -1179,9 +1183,10 @@
       origem: fonte.videoInfo.origem,
       url: fonte.videoInfo.url || null,
       duracao: isFinite($("video").duration) ? $("video").duration : null,
-      // o que o usuario escreveu e o retrato ja tirado sobrevivem a reabrir o mesmo video
-      titulo: (antigo && antigo.titulo) || "",
-      descricao: (antigo && antigo.descricao) || "",
+      // o que o usuario escreveu e o retrato ja tirado sobrevivem a reabrir o mesmo video;
+      // o rotulo vindo da busca de partidas so preenche o que ainda estiver vazio
+      titulo: (antigo && antigo.titulo) || fonte.titulo || "",
+      descricao: (antigo && antigo.descricao) || fonte.descricao || "",
       temMini: !!(antigo && antigo.temMini),
       comHandle: !!(antigo && antigo.comHandle)     // um handle ja guardado continua valendo
     };
@@ -1226,6 +1231,7 @@
     faixa.textContent = "";
     $("painelBiblio").hidden = biblioteca.length === 0;
     for (const it of biblioteca) faixa.appendChild(montarEntrada(it));
+    marcarPartidas();          // a mesma partida pode estar listada logo acima
   }
 
   function montarEntrada(it) {
@@ -1414,6 +1420,148 @@
     fr.readAsText(arq);
   }
 
+  // ------------------------------------------------------------------ partidas do lugobots.ai
+  // O site nao manda Access-Control-Allow-Origin, entao a pagina sozinha nao consegue le-lo:
+  // quem raspa e o servidor local (servidor.js + lugo/partidas.js), e daqui so sai um fetch
+  // para o proprio servidor. Aberto direto pelo file://, o /api/saude falha e o painel
+  // simplesmente nao aparece — o resto do analisador continua igual.
+  const CHAVE_BOT = "analisador_video:v1:bot";
+  const RESULTADOS = { "vitória": "venceu", "empate": "empatou", "derrota": "perdeu" };
+  let buscandoPartidas = false;
+
+  async function ligarPainelBot() {
+    try {
+      const r = await fetch("api/saude", { cache: "no-store" });
+      if (!r.ok) return;
+    } catch (err) { return; }
+
+    $("painelBot").hidden = false;
+    let ultimo = "";
+    try { ultimo = localStorage.getItem(CHAVE_BOT) || ""; } catch (err) {}
+    $("txtBot").value = ultimo;
+    // com um bot ja lembrado as partidas aparecem sozinhas: e essa a sugestao
+    if (ultimo) buscarPartidas();
+  }
+
+  async function buscarPartidas() {
+    const nome = $("txtBot").value.trim();
+    if (!nome || buscandoPartidas) return;
+    buscandoPartidas = true;
+    $("btBuscarBot").disabled = true;
+    $("listaPartidas").textContent = "";
+    dicaPartidas(`Buscando as partidas de "${nome}"…`);
+
+    let resp = null, dados = null;
+    try {
+      resp = await fetch(`api/partidas?bot=${encodeURIComponent(nome)}&n=5`, { cache: "no-store" });
+      dados = await resp.json();
+    } catch (err) {
+      dados = { erro: "O servidor local não respondeu — ele ainda está no ar?" };
+    }
+    buscandoPartidas = false;
+    $("btBuscarBot").disabled = false;
+
+    if (dados && Array.isArray(dados.candidatos)) return desenharCandidatos(dados.candidatos);
+    if (!resp || !resp.ok || !dados || !Array.isArray(dados.partidas)) {
+      return dicaPartidas((dados && dados.erro) || "Não consegui buscar as partidas.", true);
+    }
+    // guardamos o nome canonico, nao o que foi digitado: na proxima vez a busca acerta de primeira
+    try { localStorage.setItem(CHAVE_BOT, dados.bot.nome); } catch (err) {}
+    desenharPartidas(dados);
+  }
+
+  function desenharPartidas({ bot, partidas }) {
+    const lista = $("listaPartidas");
+    lista.className = "partidas";
+    lista.textContent = "";
+    if (!partidas.length) return dicaPartidas(`${bot.nome} ainda não tem partidas por aqui.`);
+    for (const p of partidas) lista.appendChild(montarPartida(p, bot));
+    marcarPartidas();
+    const semVideo = partidas.filter(p => !p.video).length;
+    dicaPartidas(`Últimas ${partidas.length} partidas de ${bot.nome}.` +
+      (semVideo ? ` ${semVideo} sem vídeo publicado.` : ""));
+  }
+
+  // o servidor devolve os candidatos quando o texto digitado bate com mais de um bot
+  function desenharCandidatos(candidatos) {
+    const lista = $("listaPartidas");
+    lista.className = "partidas candidatos";
+    lista.textContent = "";
+    for (const c of candidatos) {
+      const b = document.createElement("button");
+      b.className = "compacto";
+      b.textContent = c.nome;
+      b.title = c.slug;
+      b.addEventListener("click", () => { $("txtBot").value = c.slug; buscarPartidas(); });
+      lista.appendChild(b);
+    }
+    dicaPartidas("Mais de um bot bate com esse nome — escolha um:");
+  }
+
+  const tituloPartida = (p) => `${p.casa.nome} ${p.golsCasa} × ${p.golsFora} ${p.fora.nome}`;
+
+  function montarPartida(p, bot) {
+    const b = document.createElement("button");
+    b.className = `partida ${RESULTADOS[p.resultado] || ""}`.trim();
+    if (p.video) b.dataset.imp = `url|${p.video}`;
+    else b.disabled = true;
+    b.title = p.video
+      ? `${tituloPartida(p)}\n${p.paginaUrl}`
+      : `${tituloPartida(p)}\nSem vídeo publicado no lugobots.ai.`;
+
+    const placar = document.createElement("span");
+    placar.className = "p-placar";
+    placar.textContent = `${p.golsPro} × ${p.golsContra}`;
+
+    const txt = document.createElement("span");
+    txt.className = "txt";
+    const nome = document.createElement("span");
+    nome.className = "nome";
+    nome.textContent = p.adversario.nome;
+    const desc = document.createElement("span");
+    desc.className = "desc";
+    desc.textContent = [fmtData(p.data), p.mando, legenda(p.contexto, bot)].filter(Boolean).join(" · ");
+    txt.append(nome, desc);
+
+    b.append(placar, txt);
+    b.addEventListener("click", () => carregarVideoUrl(p.video, {
+      titulo: tituloPartida(p),
+      descricao: [fmtData(p.data), p.resultado, legenda(p.contexto, bot)].filter(Boolean).join(" · ")
+    }));
+    return b;
+  }
+
+  // marca o que ja passou pelo analisador; roda junto com a lista de videos, que e quem sabe
+  function marcarPartidas() {
+    for (const b of $("listaPartidas").querySelectorAll("button[data-imp]")) {
+      b.classList.toggle("vista", biblioteca.some(x => x.imp === b.dataset.imp));
+      b.classList.toggle("atual", b.dataset.imp === impressao);
+    }
+  }
+
+  function dicaPartidas(msg, ruim) {
+    const p = $("dicaPartidas");
+    p.textContent = msg || "";
+    p.hidden = !msg;
+    p.className = ruim ? "rot dica aviso" : "rot dica";
+  }
+
+  function fmtData(iso) {
+    const d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d)) return "";
+    return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  // O lugobots.ai responde em ingles. Quem desafiou e a unica parte que muda de linha para
+  // linha, e "desafio de <o proprio bot>" em toda partida seria so barulho: vira "desafio meu".
+  // O que nao for desafio (campeonato, por exemplo) passa direto, com o nome que o site deu.
+  function legenda(contexto, bot) {
+    const m = String(contexto || "").match(/^Challenged by (.+?) team$/i);
+    if (!m) return String(contexto || "");
+    const meu = bot && String(bot.nome).trim().toLowerCase() === m[1].trim().toLowerCase();
+    return meu ? "desafio meu" : `desafiado por ${m[1]}`;
+  }
+
   // ------------------------------------------------------------------ ligacoes
   function montarCores() {
     const barra = $("barraCores");
@@ -1444,6 +1592,10 @@
     $("btAbrirUrl").addEventListener("click", () => carregarVideoUrl($("txtVideoUrl").value));
     $("txtVideoUrl").addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); carregarVideoUrl($("txtVideoUrl").value); }
+    });
+    $("btBuscarBot").addEventListener("click", buscarPartidas);
+    $("txtBot").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); buscarPartidas(); }
     });
     $("btImportar").addEventListener("click", () => $("arqJson").click());
     $("arqJson").addEventListener("change", (e) => { if (e.target.files[0]) importar(e.target.files[0]); e.target.value = ""; });
@@ -1615,6 +1767,7 @@
     $("menuAdd").open = biblioteca.length === 0;
     atualizarRotuloEsp();
     atualizarBotoesHist();
+    ligarPainelBot();
   }
 
   ligar();
