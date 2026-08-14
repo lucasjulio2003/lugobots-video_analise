@@ -19,8 +19,11 @@ node servidor.js --porta 8080
 ## Partidas do bot
 
 Digite o nome do bot na barra lateral e as cinco partidas mais recentes dele aparecem com
-placar, adversário e data. Um clique abre a gravação da partida no analisador — e as anotações
-voltam sozinhas quando a mesma partida for aberta de novo, porque a chave delas é a URL do MP4.
+placar, adversário e data. Um clique abre a gravação — de forma **passageira**: a partida não
+entra na lista de vídeos. Para guardá-la, passe o mouse pela linha e clique no **+** azul que
+cobre o placar (funciona mesmo sem abrir a partida). As anotações, essas ficam guardadas de
+qualquer jeito e voltam sozinhas quando a mesma partida for aberta de novo, porque a chave
+delas é a URL do MP4.
 
 Quem faz a raspagem é o Node, não a página: o lugobots.ai não manda
 `Access-Control-Allow-Origin`, então um `fetch` do navegador para lá seria bloqueado. O servidor

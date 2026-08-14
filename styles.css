@@ -103,11 +103,27 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
    ponto de vista do bot buscado, e a barrinha à esquerda dele diz no que deu. */
 .partidas { display: flex; flex-direction: column; gap: 2px; }
 .partidas.candidatos { flex-direction: row; flex-wrap: wrap; gap: 4px; }
-.partida {
+.partida { position: relative; border: 1px solid transparent; border-radius: 7px; }
+.partida:hover { background: color-mix(in srgb, var(--texto) 7%, transparent); }
+.p-abrir {
   display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 4px 5px; text-align: left; background: none; border-color: transparent;
 }
-.partida:hover:not(:disabled) { background: color-mix(in srgb, var(--texto) 7%, transparent); }
+
+/* A partida abre passageira e só fica se o usuário pedir: este + cobre o placar quando o
+   mouse passa pela linha. Some no que já está na lista — ali não há o que guardar. */
+.p-guardar {
+  position: absolute; left: 5px; top: 4px; bottom: 4px; width: 58px; padding: 0;
+  font: 700 17px/1 ui-sans-serif, system-ui, sans-serif;
+  border-radius: 4px; background: var(--eu); border-color: var(--eu); color: #fff;
+  opacity: 0; transition: opacity .12s ease;
+}
+.partida:hover .p-guardar, .p-guardar:focus-visible { opacity: 1; }
+.partida.vista .p-guardar { display: none; }
+/* sem mouse não há hover, e um + sempre aceso taparia o placar: ali ele vai para a direita */
+@media (hover: none) {
+  .p-guardar { opacity: 1; left: auto; right: 5px; width: 30px; }
+}
 /* largura fixa: com o placar variando de "1 × 0" a "10 × 10" as linhas ficariam desalinhadas */
 .partida .p-placar {
   flex: none; width: 58px; padding: 3px 4px; text-align: center;

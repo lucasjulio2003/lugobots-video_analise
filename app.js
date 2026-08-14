@@ -177,8 +177,8 @@
     }
   }
 
-  // 'extra' é o que a busca de partidas sabe e a URL não conta: um rótulo legível e uma
-  // linha de contexto, que entram na lista de vídeos como título e descrição.
+  // 'extra' é o que a busca de partidas sabe e a URL não conta: um rótulo legível, uma linha
+  // de contexto e o aviso de que o vídeo é passageiro (não entra sozinho na lista).
   function carregarVideoUrl(url, extra) {
     const limpa = String(url || "").trim();
     if (!limpa) return nota("Informe um link de vídeo válido.", true);
@@ -189,6 +189,7 @@
       nome: (extra && extra.titulo) || limpa,
       titulo: (extra && extra.titulo) || "",
       descricao: (extra && extra.descricao) || "",
+      temporario: !!(extra && extra.temporario),
       impressao: `url|${limpa}`,
       videoInfo: { nome: limpa, url: limpa, origem: "url" }
     });
@@ -229,7 +230,9 @@
     ajustarPalco();                     // so depois de a area sair do hidden e ter tamanho
 
     amostrasFps = []; ultimoMediaTime = null; fpsDetectado = null;
-    lembrarVideo();
+    // uma partida aberta pela busca é passageira: entra na lista só pelo + sobre o palco
+    if (fonteAtual && !fonteAtual.fonte.temporario) lembrarVideo();
+    marcarPartidas();     // a partida passageira não passa pela lista, mas é a que está aberta
     aplicarFps();
     atualizarRecorteUI();
     atualizarPainel();
@@ -1003,12 +1006,15 @@
   function atualizarPainel() {
     const dur = estado.video && estado.video.duracao;
     const it = biblioteca.find(x => x.imp === impressao);
-    const rotulo = (it && it.titulo) || (estado.video && estado.video.nome) || "";
+    // um vídeo passageiro ainda não está na lista: o rótulo dele vive na fonte que o abriu
+    const passageira = fonteAtual && fonteAtual.fonte;
+    const rotulo = (it && it.titulo) || (passageira && passageira.titulo)
+      || (estado.video && estado.video.nome) || "";
     $("resumo").innerHTML = estado.video
       ? `<b>${escapar(rotulo)}</b> · ${vw}×${vh} · ${dur ? fmtTempo(dur) : "—"}` +
         ` · ${fps} q/s · <b>${estado.anotacoes.length}</b> anotação(ões)`
       : "";
-    $("resumo").title = (it && it.descricao) || "";
+    $("resumo").title = (it && it.descricao) || (passageira && passageira.descricao) || "";
     atualizarRotuloEsp();
     atualizarSelecao();
     desenharTiques();
@@ -1190,17 +1196,44 @@
       temMini: !!(antigo && antigo.temMini),
       comHandle: !!(antigo && antigo.comHandle)     // um handle ja guardado continua valendo
     };
-    const sobra = [it, ...biblioteca.filter(x => x.imp !== it.imp)];
-    for (const velho of sobra.slice(MAX_BIB)) { apagarHandle(velho.imp); apagarMini(velho.imp); }
-    biblioteca = sobra.slice(0, MAX_BIB);
-    salvarBiblioteca();
-    desenharBiblioteca();
+    entrarNaLista(it);
 
     if (handle) {
       guardarHandle(it.imp, handle)
         .then(() => { it.comHandle = true; salvarBiblioteca(); desenharBiblioteca(); })
         .catch(() => {});
     }
+  }
+
+  // Entrar na lista e sempre pelo topo, e o que passar do teto sai levando handle e retrato:
+  // sao eles que ocupam espaco de verdade no navegador.
+  function entrarNaLista(it) {
+    const sobra = [it, ...biblioteca.filter(x => x.imp !== it.imp)];
+    for (const velho of sobra.slice(MAX_BIB)) { apagarHandle(velho.imp); apagarMini(velho.imp); }
+    biblioteca = sobra.slice(0, MAX_BIB);
+    salvarBiblioteca();
+    desenharBiblioteca();
+  }
+
+  // Guardar a partida que ja esta aberta: aproveita a duracao e o quadro que o <video> tem.
+  function guardarNaLista() {
+    if (!impressao || biblioteca.some(x => x.imp === impressao)) return;
+    lembrarVideo();
+    const it = biblioteca.find(x => x.imp === impressao);
+    if (!it) return;
+
+    // O retrato sai do quadro que já está na tela: prepararMiniatura() daria um pulo até os
+    // 3 s e voltaria, e no meio de uma análise essa piscada apareceria.
+    const dados = it.temMini ? null : quadroAtual();
+    if (dados) {
+      minis.set(impressao, dados);
+      desenharBiblioteca();
+      guardarMini(impressao, dados)
+        .then(() => { it.temMini = true; salvarBiblioteca(); })
+        .catch(() => {});
+    }
+    atualizarPainel();
+    nota(`"${rotuloDe(it)}" guardado na lista.`);
   }
 
   function alternarLateral(mostrar) {
@@ -1499,13 +1532,20 @@
   }
 
   const tituloPartida = (p) => `${p.casa.nome} ${p.golsCasa} × ${p.golsFora} ${p.fora.nome}`;
+  const descricaoPartida = (p, bot) =>
+    [fmtData(p.data), p.resultado, legenda(p.contexto, bot)].filter(Boolean).join(" · ");
 
+  // A linha inteira abre a partida; o + que cobre o placar no hover e o que a guarda na lista
+  // de videos. Sao dois botoes irmaos, e nao um dentro do outro, que o HTML nao permite.
   function montarPartida(p, bot) {
-    const b = document.createElement("button");
-    b.className = `partida ${RESULTADOS[p.resultado] || ""}`.trim();
-    if (p.video) b.dataset.imp = `url|${p.video}`;
-    else b.disabled = true;
-    b.title = p.video
+    const caixa = document.createElement("div");
+    caixa.className = `partida ${RESULTADOS[p.resultado] || ""}`.trim();
+    if (p.video) caixa.dataset.imp = `url|${p.video}`;
+
+    const abrir = document.createElement("button");
+    abrir.className = "p-abrir";
+    abrir.disabled = !p.video;
+    abrir.title = p.video
       ? `${tituloPartida(p)}\n${p.paginaUrl}`
       : `${tituloPartida(p)}\nSem vídeo publicado no lugobots.ai.`;
 
@@ -1523,17 +1563,49 @@
     desc.textContent = [fmtData(p.data), p.mando, legenda(p.contexto, bot)].filter(Boolean).join(" · ");
     txt.append(nome, desc);
 
-    b.append(placar, txt);
-    b.addEventListener("click", () => carregarVideoUrl(p.video, {
+    abrir.append(placar, txt);
+    abrir.addEventListener("click", () => carregarVideoUrl(p.video, {
       titulo: tituloPartida(p),
-      descricao: [fmtData(p.data), p.resultado, legenda(p.contexto, bot)].filter(Boolean).join(" · ")
+      descricao: descricaoPartida(p, bot),
+      temporario: true
     }));
-    return b;
+    caixa.appendChild(abrir);
+
+    if (p.video) {
+      const mais = document.createElement("button");
+      mais.className = "p-guardar";
+      mais.textContent = "+";
+      mais.title = `Guardar na lista de vídeos:\n${tituloPartida(p)}`;
+      mais.addEventListener("click", () => guardarPartida(p, bot));
+      caixa.appendChild(mais);
+    }
+    return caixa;
+  }
+
+  // Guardar não exige abrir: o item da lista sai do que a busca já sabe. Se a partida for
+  // justamente a que está na tela, o caminho é outro — o <video> conhece a duração e o quadro.
+  function guardarPartida(p, bot) {
+    const imp = `url|${p.video}`;
+    if (biblioteca.some(x => x.imp === imp)) return;
+    if (imp === impressao) return guardarNaLista();
+
+    entrarNaLista({
+      imp,
+      nome: p.video,
+      origem: "url",
+      url: p.video,
+      duracao: null,
+      titulo: tituloPartida(p),
+      descricao: descricaoPartida(p, bot),
+      temMini: false,
+      comHandle: false
+    });
+    nota(`"${tituloPartida(p)}" guardado na lista.`);
   }
 
   // marca o que ja passou pelo analisador; roda junto com a lista de videos, que e quem sabe
   function marcarPartidas() {
-    for (const b of $("listaPartidas").querySelectorAll("button[data-imp]")) {
+    for (const b of $("listaPartidas").querySelectorAll("[data-imp]")) {
       b.classList.toggle("vista", biblioteca.some(x => x.imp === b.dataset.imp));
       b.classList.toggle("atual", b.dataset.imp === impressao);
     }
