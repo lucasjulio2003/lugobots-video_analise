@@ -79,9 +79,11 @@
          presas ao instante em que foram feitas. Nada é enviado para lugar nenhum — o vídeo é
          lido direto do disco pelo navegador.</p>
       <p>Arraste um vídeo (ou um <code>.json</code> de anotações) para qualquer lugar da página.</p>
-      <p>Com a página aberta pelo <code>node servidor.js</code>, a busca por bot lista as últimas
-         partidas dele no lugobots.ai e abre a gravação com um clique. Sem o servidor esse
-         painel some, e o resto continua igual.</p>
+      <p>O painel <b>Partidas do bot</b> — que lista as últimas partidas do bot no lugobots.ai e
+         abre a gravação com um clique — só existe <b>rodando na sua máquina</b>, com
+         <code>node servidor.js</code>. Ele não vem no site publicado: o lugobots.ai não libera
+         leitura pelo navegador, então quem busca as partidas é o Node. Sem o servidor o painel
+         some e o resto continua igual.</p>
       <p>Uma partida aberta assim é <b>passageira</b>: ela não entra na lista de vídeos até você
          passar o mouse pela linha dela e clicar no <b>+</b> que cobre o placar. As anotações,
          essas ficam guardadas de qualquer jeito e voltam sozinhas quando a mesma partida for
