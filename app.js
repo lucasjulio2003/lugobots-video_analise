@@ -9,6 +9,7 @@
   const CHAVE = "analisador_video:v1:";
   const CHAVE_BIB = "analisador_video:v1:biblioteca";
   const CHAVE_LATERAL = "analisador_video:v1:lateral";
+  const CHAVE_GUIA = "analisador_video:v1:guia";
   const VERSAO = 1;
   const svgNS = "http://www.w3.org/2000/svg";
 
@@ -24,6 +25,9 @@
   let impressao = null;               // chave do localStorage para o video atual
   let biblioteca = [];                // lista de videos guardados, na ordem do mais recente
   let editando = null;                // impressao do item com o editor de titulo aberto
+  let guia = "videos";                // guia visivel na lateral: "videos" ou "lances"
+  let lanceAberto = null;             // chave do lance com o editor de nota aberto
+  let lanceMarcado = "";              // ultimo lance destacado, para nao mexer no DOM a cada quadro
   const minis = new Map();            // impressao -> miniatura, para nao reler o banco
   let fonteAtual = null;              // { fonte, handle } do video que esta abrindo
   let aguardandoReabrir = null;       // item da lista que o usuario foi localizar no disco
@@ -49,8 +53,10 @@
   let entradaTexto = null;
   let importadoPendente = false;      // JSON importado antes de abrir o video
 
+  // 'lances' guarda so o que o usuario escreveu, indexado pelo instante (ver chaveLance):
+  // o lance em si nao e um registro, e o conjunto dos desenhos que dividem aquele instante.
   function novoEstado() {
-    return { versao: VERSAO, video: null, recorte: null, tolPadrao: 0.5, anotacoes: [] };
+    return { versao: VERSAO, video: null, recorte: null, tolPadrao: 0.5, anotacoes: [], lances: {} };
   }
 
   // ------------------------------------------------------ conversao de coordenadas
@@ -150,6 +156,7 @@
     estado.video = fonte.videoInfo;
     seq = estado.anotacoes.reduce((m, a) => Math.max(m, a.id), 0) + 1;
     selecionado = null;
+    lanceAberto = null; lanceMarcado = "";
     pilhaDesfazer = []; pilhaRefazer = [];
 
     $("selTol").value = String(estado.tolPadrao);
@@ -290,6 +297,7 @@
     $("relogio").textContent = `${fmtTempo(t)}  ·  q${Math.round(t * fps)}`;
     if (document.activeElement !== $("slTempo")) $("slTempo").value = String(t);
     $("btPlay").textContent = v.paused ? "▶" : "⏸";
+    marcarLanceAtual();
   }
 
   // ------------------------------------------------------------------ recorte
@@ -929,7 +937,7 @@
 
   function inserir(a) {
     const nova = {
-      id: seq++, t: a.t ?? $("video").currentTime, tol: a.tol ?? tolAtual(),
+      id: seq++, t: instanteDoLance(a.t ?? $("video").currentTime), tol: a.tol ?? tolAtual(),
       tipo: a.tipo, cor: a.cor ?? cor, esp: a.esp ?? espessura,
       pts: a.pts, texto: a.texto, numero: a.numero,
       preench: a.preench ?? $("ckPreench").checked
@@ -952,8 +960,19 @@
     agendarRender();
   }
 
+  // O instantaneo leva as notas junto com os desenhos: a nota e do lance, e o lance so existe
+  // enquanto os desenhos dele existem — desfazer uma exclusao tem de trazer os dois de volta.
+  const instantaneo = () => JSON.stringify(
+    { anotacoes: estado.anotacoes, lances: estado.lances || {} }, serializar);
+
+  function restaurar(bruto) {
+    const d = JSON.parse(bruto, desserializar);
+    estado.anotacoes = d.anotacoes;
+    estado.lances = d.lances || {};
+  }
+
   function empilhar() {
-    pilhaDesfazer.push(JSON.stringify(estado.anotacoes, serializar));
+    pilhaDesfazer.push(instantaneo());
     if (pilhaDesfazer.length > 50) pilhaDesfazer.shift();
     pilhaRefazer = [];
     atualizarBotoesHist();
@@ -961,20 +980,21 @@
 
   function desfazer() {
     if (!pilhaDesfazer.length) return;
-    pilhaRefazer.push(JSON.stringify(estado.anotacoes, serializar));
-    estado.anotacoes = JSON.parse(pilhaDesfazer.pop(), desserializar);
+    pilhaRefazer.push(instantaneo());
+    restaurar(pilhaDesfazer.pop());
     depoisDoHistorico();
   }
 
   function refazer() {
     if (!pilhaRefazer.length) return;
-    pilhaDesfazer.push(JSON.stringify(estado.anotacoes, serializar));
-    estado.anotacoes = JSON.parse(pilhaRefazer.pop(), desserializar);
+    pilhaDesfazer.push(instantaneo());
+    restaurar(pilhaRefazer.pop());
     depoisDoHistorico();
   }
 
   function depoisDoHistorico() {
     if (!estado.anotacoes.some(a => a.id === selecionado)) selecionado = null;
+    if (lanceAberto && !estado.anotacoes.some(a => chaveLance(a.t) === lanceAberto)) lanceAberto = null;
     salvar();
     atualizarPainel();
     atualizarBotoesHist();
@@ -1018,6 +1038,7 @@
     atualizarRotuloEsp();
     atualizarSelecao();
     desenharTiques();
+    desenharLances();
   }
 
   // As acoes que eram os botoes de cada linha da tabela: aparecem so quando ha selecao,
@@ -1033,22 +1054,247 @@
     $("selTempo").textContent = `${fmtTempo(a.t)} · ${fmtTol(tolDe(a))}`;
   }
 
+  // ------------------------------------------------------------------ lances
+  // Um lance e tudo o que foi desenhado num mesmo instante: parar o video, marcar o passe,
+  // o adversario e a zona e um lance so. Como a identidade dele e o proprio instante, nao ha
+  // registro para criar nem para apagar — ele nasce do primeiro desenho e some com o ultimo.
+  const chaveLance = (t) => (t || 0).toFixed(3);
+
+  // O seek nao devolve o mesmo currentTime exato quando se sai de um quadro e se volta a ele,
+  // e dois instantes separados por microssegundos virariam dois lances. Por isso um desenho
+  // novo ADOTA o instante do vizinho mais proximo dentro de meio quadro: assim os desenhos de
+  // um lance dividem literalmente o mesmo t, e a chave da nota nao escorrega.
+  function instanteDoLance(t) {
+    let melhor = t, dist = Infinity;
+    for (const a of estado.anotacoes) {
+      const d = Math.abs(a.t - t);
+      if (d < dist) { dist = d; melhor = a.t; }
+    }
+    return dist <= 0.5 / fps ? melhor : t;
+  }
+
+  function agruparLances() {
+    const m = new Map();
+    for (const a of estado.anotacoes) {
+      const k = chaveLance(a.t);
+      if (!m.has(k)) m.set(k, { chave: k, t: a.t, itens: [] });
+      m.get(k).itens.push(a);
+    }
+    return [...m.values()].sort((x, y) => x.t - y.t);
+  }
+
+  const notaDe = (chave) => (estado.lances && estado.lances[chave] && estado.lances[chave].nota) || "";
+
+  function gravarNota(chave, texto) {
+    if (!estado.lances) estado.lances = {};
+    const limpo = texto.trim();
+    if (limpo) estado.lances[chave] = { nota: limpo };
+    else delete estado.lances[chave];
+    salvar();
+  }
+
+  // A nota e do instante, nao dos desenhos. Quando o ultimo desenho de um lance muda de
+  // instante (o "Recolocar aqui"), o lance inteiro andou: a nota vai junto.
+  function migrarNota(de, para) {
+    const texto = notaDe(de);
+    if (de === para || !texto) return;
+    if (estado.anotacoes.some(a => chaveLance(a.t) === de)) return;
+    const destino = notaDe(para);
+    estado.lances[para] = { nota: destino ? `${destino}\n${texto}` : texto };
+    delete estado.lances[de];
+  }
+
+  const PLURAL = {
+    seta: "setas", linha: "linhas", livre: "traços", retangulo: "retângulos",
+    elipse: "elipses", zona: "zonas", texto: "textos", jogador: "jogadores"
+  };
+
+  function resumoTipos(itens) {
+    const conta = new Map();
+    for (const a of itens) conta.set(a.tipo, (conta.get(a.tipo) || 0) + 1);
+    return [...conta].map(([tipo, n]) => n > 1 ? `${n} ${PLURAL[tipo] || tipo}` : `1 ${tipo}`).join(" · ");
+  }
+
+  function desenharLances() {
+    const gs = agruparLances();
+    const cont = $("contLances");
+    cont.textContent = String(gs.length);
+    cont.hidden = gs.length === 0;
+
+    const lista = $("listaLances");
+    lista.textContent = "";
+    for (const g of gs) lista.appendChild(montarLance(g));
+
+    const dica = $("dicaLances");
+    dica.hidden = gs.length > 0;
+    dica.textContent = estado.recorte
+      ? "Nenhum lance ainda. Pause o vídeo, desenhe sobre o campo e o instante aparece aqui."
+      : "Abra um vídeo e defina o recorte do campo para começar a marcar lances.";
+
+    lanceMarcado = "";
+    marcarLanceAtual();
+  }
+
+  function montarLance(g) {
+    const nota = notaDe(g.chave);
+    const caixa = document.createElement("div");
+    caixa.className = "entrada lance";
+    caixa.dataset.lance = g.chave;
+
+    const d = document.createElement("div");
+    d.className = "item";
+
+    const tipos = resumoTipos(g.itens);
+    const abrir = document.createElement("button");
+    abrir.className = "abrir";
+    abrir.addEventListener("click", () => irLance(g.chave, g.t));
+
+    const tempo = document.createElement("span");
+    tempo.className = "l-tempo";
+    tempo.textContent = fmtTempo(g.t);
+    tempo.style.borderLeftColor = g.itens[0].cor;   // a cor do primeiro desenho identifica o lance
+
+    // o carimbo de tempo e o inventario dos desenhos dividem a primeira linha; a nota fica
+    // com a largura inteira da segunda, que e onde ha texto de verdade para ler
+    const cabeca = document.createElement("span");
+    cabeca.className = "l-linha";
+    const nome = document.createElement("span");
+    nome.className = "nome";
+    nome.textContent = tipos;
+    cabeca.append(tempo, nome);
+
+    const escrita = document.createElement("span");
+    escrita.className = "l-nota";
+    abrir.append(cabeca, escrita);
+
+    const ed = document.createElement("button");
+    ed.className = "acao anotar";
+    ed.textContent = "✎";
+
+    // enquanto o editor esta aberto a linha acompanha a digitacao sem redesenhar a lista
+    const vestir = (texto) => {
+      const limpo = texto.trim();
+      caixa.classList.toggle("tem-nota", !!limpo);
+      escrita.textContent = limpo;
+      escrita.hidden = !limpo;
+      abrir.title = `Ir para ${fmtTempo(g.t)} · ${tipos}${limpo ? `\n\n${limpo}` : ""}`;
+      ed.title = limpo ? "Ver e editar a anotação" : "Anotar este lance";
+    };
+    vestir(nota);
+
+    ed.addEventListener("click", () => {
+      lanceAberto = lanceAberto === g.chave ? null : g.chave;
+      desenharLances();
+      const campo = $("listaLances").querySelector(".editor textarea");
+      if (campo) { campo.focus(); campo.setSelectionRange(campo.value.length, campo.value.length); }
+    });
+
+    const x = document.createElement("button");
+    x.className = "acao fechar";
+    x.textContent = "✕";
+    x.title = "Apagar o lance inteiro (desenhos e anotação)";
+    x.addEventListener("click", () => apagarLance(g));
+
+    d.append(abrir, ed, x);
+    caixa.appendChild(d);
+    if (lanceAberto === g.chave) caixa.appendChild(montarNota(g, nota, vestir));
+    return caixa;
+  }
+
+  function montarNota(g, nota, vestir) {
+    const ed = document.createElement("div");
+    ed.className = "editor";
+
+    const ta = document.createElement("textarea");
+    ta.rows = 3;
+    ta.placeholder = "O que aconteceu neste lance?";
+    ta.value = nota;
+    // grava a cada tecla (salvar() ja junta as rajadas) e mexe so na linha de cima: redesenhar
+    // a lista inteira aqui trocaria o textarea e tiraria o foco de quem esta escrevendo
+    ta.addEventListener("input", () => { gravarNota(g.chave, ta.value); vestir(ta.value); });
+    // o tique da regua so muda de aparencia quando ha nota ou nao; esperar o campo perder o
+    // foco evita reconstruir a faixa a cada tecla
+    ta.addEventListener("change", desenharTiques);
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); fecharNota(); }
+      e.stopPropagation();              // segura os atalhos globais (espaco, setas, Delete)
+    });
+
+    const fecharNota = () => { lanceAberto = null; desenharLances(); desenharTiques(); };
+    const pronto = document.createElement("button");
+    pronto.className = "compacto";
+    pronto.textContent = "Pronto";
+    // pointerdown, e nao click: o 'change' do textarea dispara no blur e refaz a faixa de
+    // tiques, e um redesenho no meio do caminho comeria o clique
+    pronto.addEventListener("pointerdown", (e) => { e.preventDefault(); fecharNota(); });
+
+    ed.append(ta, pronto);
+    return ed;
+  }
+
+  function apagarLance(g) {
+    if (!confirm(`Apagar o lance de ${fmtTempo(g.t)} — ${resumoTipos(g.itens)}` +
+                 `${notaDe(g.chave) ? " e a anotação dele" : ""}? (dá para desfazer com Ctrl+Z)`)) return;
+    empilhar();
+    const fora = new Set(g.itens.map(a => a.id));
+    estado.anotacoes = estado.anotacoes.filter(a => !fora.has(a.id));
+    if (estado.lances) delete estado.lances[g.chave];
+    if (fora.has(selecionado)) selecionado = null;
+    if (lanceAberto === g.chave) lanceAberto = null;
+    salvar(); atualizarPainel(); assinatura = ""; agendarRender();
+  }
+
+  // Leva o video ao instante do lance e, se a guia estiver a vista, traz a linha dele junto.
+  function irLance(chave, t) {
+    irPara(t);
+    if (guia !== "lances" || $("app").classList.contains("recolhida")) return;
+    const linha = $("listaLances").querySelector(`[data-lance="${chave}"]`);
+    if (linha) linha.scrollIntoView({ block: "nearest" });
+  }
+
+  // Destaca o lance mais proximo do cursor do video — meio segundo de folga, o mesmo tamanho
+  // da janela de visibilidade padrao. Roda a cada quadro, entao so toca no DOM quando muda.
+  function marcarLanceAtual() {
+    if (guia !== "lances") return;
+    const t = $("video").currentTime || 0;
+    let alvo = "";
+    let dist = 0.5;
+    for (const g of agruparLances()) {
+      const d = Math.abs(g.t - t);
+      if (d <= dist) { dist = d; alvo = g.chave; }
+    }
+    if (alvo === lanceMarcado) return;
+    lanceMarcado = alvo;
+    for (const l of $("listaLances").children) {
+      l.classList.toggle("atual", l.dataset.lance === alvo);
+    }
+  }
+
+  // Um tique por lance, e nao por desenho: no mesmo instante eles ficariam empilhados.
   function desenharTiques() {
     const faixa = $("tiques");
     faixa.textContent = "";
     const dur = $("video").duration;
     if (!isFinite(dur) || dur <= 0) return;
-    for (const a of estado.anotacoes) {
+    for (const g of agruparLances()) {
+      const nota = notaDe(g.chave);
       const s = document.createElement("span");
-      s.className = "tique";
-      s.style.left = `${clamp(a.t / dur, 0, 1) * 100}%`;
-      s.style.background = a.cor;
-      s.title = `${fmtTempo(a.t)} · ${a.tipo}`;
-      s.addEventListener("click", () => {
-        selecionado = a.id; irPara(a.t); atualizarPainel(); assinatura = ""; agendarRender();
-      });
+      s.className = "tique" + (nota ? " com-nota" : "");
+      s.style.left = `${clamp(g.t / dur, 0, 1) * 100}%`;
+      s.style.background = g.itens[0].cor;
+      s.title = [fmtTempo(g.t), resumoTipos(g.itens), nota.split("\n")[0]].filter(Boolean).join(" · ");
+      s.addEventListener("click", () => irLance(g.chave, g.t));
       faixa.appendChild(s);
     }
+  }
+
+  function escolherGuia(nome) {
+    guia = nome;
+    for (const b of $("guias").children) b.classList.toggle("ativa", b.dataset.guia === nome);
+    $("painelVideos").hidden = nome !== "videos";
+    $("painelLances").hidden = nome !== "lances";
+    try { localStorage.setItem(CHAVE_GUIA, nome); } catch (err) {}
+    if (nome === "lances") desenharLances();
   }
 
   function nota(msg, ruim) {
@@ -1085,7 +1331,10 @@
       const bruto = localStorage.getItem(CHAVE + imp);
       if (!bruto) return null;
       const s = JSON.parse(bruto, desserializar);
-      return (s && Array.isArray(s.anotacoes)) ? s : null;
+      if (!s || !Array.isArray(s.anotacoes)) return null;
+      // gravacoes anteriores a guia de lances nao tem o campo; sem ele nada mais escreve nota
+      if (!s.lances || typeof s.lances !== "object") s.lances = {};
+      return s;
     } catch (err) { return null; }
   }
 
@@ -1435,10 +1684,11 @@
         versao: VERSAO, video: antes || s.video || null,
         recorte: s.recorte || null,
         tolPadrao: typeof s.tolPadrao === "number" ? s.tolPadrao : 0.5,
-        anotacoes: s.anotacoes
+        anotacoes: s.anotacoes,
+        lances: (s.lances && typeof s.lances === "object") ? s.lances : {}
       };
       seq = estado.anotacoes.reduce((m, a) => Math.max(m, a.id || 0), 0) + 1;
-      selecionado = null; pilhaDesfazer = []; pilhaRefazer = [];
+      selecionado = null; lanceAberto = null; pilhaDesfazer = []; pilhaRefazer = [];
       importadoPendente = !impressao;   // sem video ainda: guardar para o proximo que abrir
       $("selTol").value = isFinite(estado.tolPadrao) ? String(estado.tolPadrao) : "Infinity";
 
@@ -1743,7 +1993,9 @@
       const a = estado.anotacoes.find(q => q.id === selecionado);
       if (!a) return;
       empilhar();
-      a.t = $("video").currentTime;
+      const antes = chaveLance(a.t);
+      a.t = instanteDoLance($("video").currentTime);
+      migrarNota(antes, chaveLance(a.t));           // sozinha, a anotacao leva o lance inteiro
       salvar(); atualizarPainel(); assinatura = ""; agendarRender();
     });
     $("btApagarSel").addEventListener("click", () => {
@@ -1752,11 +2004,16 @@
 
     $("btAbrirLateral").addEventListener("click", () => alternarLateral());
     $("btFecharLateral").addEventListener("click", () => alternarLateral(false));
+    $("guias").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-guia]");
+      if (b) escolherGuia(b.dataset.guia);
+    });
     $("btLimparTudo").addEventListener("click", () => {
       if (!estado.anotacoes.length) return;
       if (!confirm(`Apagar as ${estado.anotacoes.length} anotações? (dá para desfazer com Ctrl+Z)`)) return;
       empilhar();
-      estado.anotacoes = []; selecionado = null;
+      estado.anotacoes = []; estado.lances = {};
+      selecionado = null; lanceAberto = null;
       salvar(); atualizarPainel(); assinatura = ""; agendarRender();
     });
 
@@ -1837,6 +2094,9 @@
     try { recolhida = localStorage.getItem(CHAVE_LATERAL) === "1"; } catch (err) {}
     $("app").classList.toggle("recolhida", recolhida);
     $("menuAdd").open = biblioteca.length === 0;
+    let guiaSalva = "videos";
+    try { guiaSalva = localStorage.getItem(CHAVE_GUIA) || "videos"; } catch (err) {}
+    escolherGuia(guiaSalva === "lances" ? "lances" : "videos");
     atualizarRotuloEsp();
     atualizarBotoesHist();
     ligarPainelBot();

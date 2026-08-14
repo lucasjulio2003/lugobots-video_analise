@@ -23,6 +23,19 @@ Deixe o terminal aberto enquanto usa e abra o endereço que ele imprimir. O `ser
 **local**, no seu computador: não há nada para publicar nem para hospedar, e ele não é usado
 pela versão que está no ar.
 
+## Lances
+
+Tudo o que é desenhado num mesmo instante do vídeo é **um lance** — parar no quadro e marcar o
+passe, o adversário e a zona são três desenhos e um lance só. A guia **Lances**, no alto da barra
+lateral, reúne todos eles em ordem: cada linha mostra a hora, o que há ali e leva o vídeo de
+volta àquele momento com um clique. O **✎** abre uma anotação escrita para o lance, que aparece
+na própria linha e vai junto no `Exportar JSON`. Na régua abaixo do vídeo cada tique passa a ser
+um lance, e os que têm anotação ganham um anel em volta.
+
+Um lance não é um registro à parte: ele nasce do primeiro desenho daquele instante e some com o
+último. Por isso um desenho novo que caia a menos de meio quadro de outro adota o instante dele —
+sem isso, a imprecisão do `seek` partiria o mesmo quadro em dois lances.
+
 ## Partidas do bot
 
 Digite o nome do bot na barra lateral e as cinco partidas mais recentes dele aparecem com

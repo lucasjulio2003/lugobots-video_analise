@@ -75,8 +75,26 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
   transition: margin-left .16s ease;
 }
 .app.recolhida .lateral { margin-left: -264px; }
-.lateral-topo { display: flex; align-items: center; justify-content: space-between; }
-.lateral-topo strong { font-size: 15px; }
+.lateral-topo { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+/* as duas guias herdam o esqueleto da lateral: cada uma é uma coluna de seções, e a ajuda
+   continua sendo empurrada para o rodapé pelo margin-top:auto dela */
+.aba { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+.guias { display: flex; gap: 3px; min-width: 0; }
+.guia {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 9px; font-size: 13px; font-weight: 600;
+  background: none; border-color: transparent; color: var(--fraco);
+}
+.guia.ativa {
+  color: var(--texto);
+  border-color: color-mix(in srgb, var(--eu) 45%, transparent);
+  background: color-mix(in srgb, var(--eu) 13%, transparent);
+}
+.guia .cont {
+  padding: 0 5px; border-radius: 8px; font-size: 11px; font-weight: 600;
+  background: color-mix(in srgb, var(--texto) 12%, transparent); color: var(--fraco);
+}
+.guia.ativa .cont { background: var(--eu); color: #fff; }
 .secao { display: flex; flex-direction: column; gap: 7px; }
 .secao .botoes { display: flex; flex-wrap: wrap; gap: 5px; }
 .secao .botoes button { flex: 1 1 auto; font-size: 12px; padding: 4px 8px; }
@@ -185,6 +203,33 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
 .editor button { align-self: flex-end; }
 .dica { margin: 8px 2px 0; line-height: 1.45; }
 
+/* ---------------------------------------------- lances
+   Um lance é o conjunto de desenhos de um mesmo instante. A lista reaproveita o
+   esqueleto das entradas da biblioteca; só o carimbo de tempo é próprio daqui. */
+.lances { display: flex; flex-direction: column; gap: 3px; }
+.lance .abrir { flex-direction: column; align-items: stretch; gap: 3px; }
+.lance .l-linha { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lance .l-tempo {
+  flex: none; width: 74px; padding: 3px 4px; text-align: center;
+  font: 600 11.5px/1.2 ui-monospace, Consolas, monospace;
+  border-radius: 4px; border-left: 3px solid var(--manter);
+  background: color-mix(in srgb, var(--texto) 8%, transparent);
+}
+/* fora da coluna .txt, o inventário de desenhos precisa das próprias medidas */
+.lance .nome {
+  min-width: 0; font-size: 12px; color: var(--fraco);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* a nota manda na linha: até duas linhas inteiras antes de cortar */
+.lance .l-nota {
+  font-size: 12.5px; line-height: 1.35; text-align: left;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* o lápis fica aceso onde já há o que ler, mesmo sem o mouse por cima da linha */
+.lance.tem-nota .acao.anotar { opacity: 1; color: var(--eu); }
+/* a nota é texto corrido e merece mais espaço que o título de um vídeo */
+.lance .editor textarea { min-height: 64px; }
+
 .ajuda { margin-top: auto; }
 .ajuda summary { cursor: pointer; color: var(--fraco); font-size: 12px; }
 .ajuda p { color: var(--fraco); font-size: 12px; line-height: 1.5; }
@@ -269,6 +314,8 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
   border-radius: 2px; cursor: pointer;
 }
 .tique:hover { outline: 1px solid var(--texto); }
+/* lance com anotação escrita: o anel o separa dos outros sem mudar a cor, que é a do desenho */
+.tique.com-nota { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--texto) 60%, transparent); }
 .relogio { font: 13px/1 ui-monospace, Consolas, monospace; min-width: 142px; }
 #lbRegua { font-family: ui-monospace, Consolas, monospace; }
 
