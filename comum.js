@@ -116,6 +116,41 @@
     return fora;
   }
 
+  // ------------------------------------------------------------------ banco de imagens
+  // O localStorage guarda texto e tem 5 MB, que é onde mora o trabalho do usuário. Imagem vai
+  // para o IndexedDB, que aceita objetos e tem espaço de sobra — o mesmo banco que já guarda
+  // os handles de arquivo e as miniaturas dos vídeos.
+  const BD = "analisador_video", LOJA = "handles";
+
+  function comBanco(modo, fn) {
+    return new Promise((ok, falha) => {
+      const req = indexedDB.open(BD, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(LOJA);
+      req.onerror = () => falha(req.error);
+      req.onsuccess = () => {
+        const bd = req.result;
+        try {
+          const tx = bd.transaction(LOJA, modo);
+          const p = fn(tx.objectStore(LOJA));
+          tx.oncomplete = () => { bd.close(); ok(p ? p.result : undefined); };
+          tx.onerror = () => { bd.close(); falha(tx.error); };
+        } catch (err) { bd.close(); falha(err); }
+      };
+    });
+  }
+
+  // O retrato de um lance: o quadro do vídeo com os desenhos daquele instante por cima, tirado
+  // pelo analisador e mostrado no card do quadro. A chave repete a identidade do lance.
+  const chaveRetrato = (imp, chave) => `lance:${imp}@${chave}`;
+  const guardarRetrato = (imp, chave, dados) =>
+    comBanco("readwrite", (l) => l.put(dados, chaveRetrato(imp, chave))).catch(() => {});
+  const lerRetrato = (imp, chave) =>
+    comBanco("readonly", (l) => l.get(chaveRetrato(imp, chave))).catch(() => null);
+  // Some com a foto só quando o lance é apagado de propósito. Tirar o vídeo da lista, ou até
+  // apagar os desenhos, não leva o retrato: é o que o card órfão do quadro continua mostrando.
+  const apagarRetrato = (imp, chave) =>
+    comBanco("readwrite", (l) => l.delete(chaveRetrato(imp, chave))).catch(() => {});
+
   function lerBiblioteca() {
     try {
       const b = JSON.parse(localStorage.getItem(CHAVE_BIB) || "[]");
@@ -131,6 +166,7 @@
     CHAVE, CHAVE_BIB, CHAVE_LATERAL, CHAVE_GUIA, CHAVE_BOT, CHAVE_QUADRO, RESERVADAS,
     chaveLance, fmtTempo, PLURAL, resumoTipos, agruparLances,
     ESTAGIOS, ESTAGIO_PADRAO, PRIORIDADES, estagioDe, entradaVazia, podarLances,
-    lerEstado, gravarLances, videosGuardados, lerBiblioteca, rotuloDe
+    lerEstado, gravarLances, videosGuardados, lerBiblioteca, rotuloDe,
+    BD, LOJA, comBanco, guardarRetrato, lerRetrato, apagarRetrato
   };
 })();

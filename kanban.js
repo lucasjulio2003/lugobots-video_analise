@@ -8,8 +8,13 @@
   const {
     CHAVE, CHAVE_QUADRO, fmtTempo, resumoTipos, agruparLances,
     ESTAGIOS, ESTAGIO_PADRAO, PRIORIDADES, estagioDe, entradaVazia,
-    lerEstado, gravarLances, videosGuardados, lerBiblioteca, rotuloDe
+    lerEstado, gravarLances, videosGuardados, lerBiblioteca, rotuloDe,
+    lerRetrato, apagarRetrato
   } = window.Analisador;
+
+  // id do card -> foto do lance (ou null quando aquele lance não tem). Fica em memória para o
+  // quadro não reler o banco a cada redesenho — e para a imagem não piscar ao mover um card.
+  const retratos = new Map();
 
   const $ = (id) => document.getElementById(id);
 
@@ -211,6 +216,26 @@
       for (const p of document.querySelectorAll(".pilha")) limparMarcas(p);
     });
 
+    // A foto entra escondida e só aparece quando chega: assim o card não pisca nem salta de
+    // altura, e um lance sem retrato (anterior a isto, ou de vídeo de outra origem) não deixa
+    // uma moldura vazia no lugar.
+    const foto = document.createElement("img");
+    foto.className = "c-foto";
+    foto.alt = "";
+    foto.draggable = false;              // senão o navegador arrasta a imagem, e não o card
+    foto.hidden = true;
+    const vestirFoto = (dados) => {
+      if (!dados) return;
+      foto.src = dados;
+      foto.hidden = false;
+      art.classList.add("com-retrato");
+    };
+    if (retratos.has(art.dataset.id)) vestirFoto(retratos.get(art.dataset.id));
+    else lerRetrato(c.imp, c.chave).then((dados) => {
+      retratos.set(art.dataset.id, dados || null);
+      vestirFoto(dados);
+    });
+
     const topo = document.createElement("div");
     topo.className = "c-topo";
     const tempo = document.createElement("span");
@@ -231,7 +256,7 @@
     pe.textContent = c.orfao ? "⚠ sem desenhos no analisador" : c.tipos;
     if (c.orfao) pe.title = "Os desenhos deste lance foram apagados; a anotação e o estágio ficaram.";
 
-    art.append(topo, nota, pe);
+    art.append(topo, foto, nota, pe);
     art.appendChild(editando === idDe(c) ? montarEditor(c) : montarAcoes(c));
     return art;
   }
@@ -285,6 +310,8 @@
       x.addEventListener("click", () => {
         if (!confirm(`Descartar o card de ${fmtTempo(c.t)} — ${c.partida}?`)) return;
         alterar([{ imp: c.imp, chave: c.chave, campos: { nota: "", prioridade: "", estagio: "" } }], true);
+        apagarRetrato(c.imp, c.chave);   // sem desenhos e sem card, a foto não serve a ninguém
+        retratos.delete(idDe(c));
         desenhar();
       });
       linha.appendChild(x);

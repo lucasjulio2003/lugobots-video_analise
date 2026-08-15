@@ -405,10 +405,17 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
   min-width: 0; font-size: 11.5px; color: var(--fraco);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* o quadro do vídeo com os desenhos do lance por cima; a proporção é a do recorte do campo */
+.c-foto {
+  display: block; width: 100%; height: auto; border-radius: 5px;
+  background: #000; pointer-events: none;
+}
 .c-nota {
   margin: 0; font-size: 12.5px; line-height: 1.35;
   display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
 }
+/* com foto, a anotação cede uma linha para o card não virar uma torre */
+.card.com-retrato .c-nota { -webkit-line-clamp: 3; }
 .c-nota.sem { color: var(--fraco); font-style: italic; }
 .c-pe { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card.orfao .c-pe { color: var(--adv); }

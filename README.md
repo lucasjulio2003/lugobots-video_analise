@@ -48,6 +48,18 @@ entre as colunas (ou usar as setas `◀ ▶`, que funcionam no toque e no teclad
 pelo `↗`. O filtro de cima abre mostrando só o que já tem trabalho — anotação, prioridade ou
 estágio; desligue-o para ver também os rabiscos de análise.
 
+Cada card mostra uma **foto do lance**: o quadro do vídeo recortado no campo, com os desenhos
+daquele instante por cima. Ela é tirada pelo analisador na hora em que você desenha — sai do
+`<video>` e do próprio SVG que já está na tela, custa ~8 KB e mora no IndexedDB, ao lado das
+miniaturas. Lances marcados antes desta versão, e vídeos que o navegador não deixa fotografar,
+simplesmente aparecem sem foto; o card continua inteiro.
+
+O empecilho é o CORS: um `<canvas>` que recebe um quadro de vídeo de outra origem fica "sujo" e
+não pode mais ser lido. Por isso o vídeo aberto por link é pedido com `crossorigin`, e, se o
+servidor dele não mandar `Access-Control-Allow-Origin`, o analisador refaz o pedido sem o
+atributo: a partida abre igual, só fica sem foto (e o navegador registra no console o primeiro
+pedido recusado). Vídeo do disco vem por `blob:`, é sempre da mesma origem e nunca cai nisso.
+
 Um card **órfão** é um lance cujos desenhos foram apagados no analisador. Ele fica, marcado,
 até você arquivá-lo ou descartá-lo: o que já foi escrito e movido não some sozinho. O `✕` da
 guia Lances, esse sim, apaga o lance inteiro de propósito — desenhos, anotação e card.

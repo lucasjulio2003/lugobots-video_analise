@@ -12,7 +12,8 @@
   const {
     CHAVE, CHAVE_BIB, CHAVE_LATERAL, CHAVE_GUIA, CHAVE_BOT,
     chaveLance, fmtTempo, resumoTipos, agruparLances,
-    ESTAGIOS, ESTAGIO_PADRAO, estagioDe, podarLances, lerEstado, lerBiblioteca, rotuloDe
+    ESTAGIOS, ESTAGIO_PADRAO, estagioDe, podarLances, lerEstado, lerBiblioteca, rotuloDe,
+    comBanco, guardarRetrato, apagarRetrato
   } = window.Analisador;
   const VERSAO = 1;
   const svgNS = "http://www.w3.org/2000/svg";
@@ -57,6 +58,7 @@
   let temporizadorSalvar = 0, pendente = null;
   let entradaTexto = null;
   let importadoPendente = false;      // JSON importado antes de abrir o video
+  let semCors = false;                // o video atual ja voltou a carregar sem crossorigin
 
   // 'lances' guarda so o que o usuario escreveu, indexado pelo instante (ver chaveLance):
   // o lance em si nao e um registro, e o conjunto dos desenhos que dividem aquele instante.
@@ -160,6 +162,12 @@
 
     $("selTol").value = String(estado.tolPadrao);
     const v = $("video");
+    // 'anonymous' é o que mantém o canvas limpo e permite tirar o retrato do lance. Se o
+    // servidor do vídeo não mandar Access-Control-Allow-Origin o navegador recusa o arquivo —
+    // e aí o ouvinte de erro tenta de novo sem o atributo (ver ligar()): o vídeo abre igual,
+    // só fica sem retrato. Arquivo do disco chega por blob:, mesma origem, e não precisa disso.
+    semCors = false;
+    v.crossOrigin = fonte.revogavel ? null : "anonymous";
     v.src = fonte.src;
     v.load();
   }
@@ -841,7 +849,11 @@
       }
     }
     if (tipo === "rec-novo" || tipo === "rec-mover" || tipo === "rec-alca") atualizarRecorteUI();
-    if (tipo === "mover" || tipo === "vertice" || tipo === "escala") { salvar(); atualizarPainel(); }
+    if (tipo === "mover" || tipo === "vertice" || tipo === "escala") {
+      salvar(); atualizarPainel();
+      const a = estado.anotacoes.find(q => q.id === selecionado);
+      if (a) tirarRetrato(a.t);         // o desenho mudou de lugar: a foto do lance mudou
+    }
     assinatura = "";
     agendarRender();
   }
@@ -955,14 +967,17 @@
     selecionado = nova.id;
     salvar();
     atualizarPainel();
+    tirarRetrato(nova.t);
     assinatura = "";
     agendarRender();
   }
 
   function remover(id) {
     empilhar();
+    const saiu = estado.anotacoes.find(a => a.id === id);
     estado.anotacoes = estado.anotacoes.filter(a => a.id !== id);
     if (selecionado === id) selecionado = null;
+    if (saiu) tirarRetrato(saiu.t);
     salvar();
     atualizarPainel();
     assinatura = "";
@@ -1253,6 +1268,7 @@
     const fora = new Set(g.itens.map(a => a.id));
     estado.anotacoes = estado.anotacoes.filter(a => !fora.has(a.id));
     if (estado.lances) delete estado.lances[g.chave];
+    apagarRetrato(impressao, g.chave);
     if (fora.has(selecionado)) selecionado = null;
     if (lanceAberto === g.chave) lanceAberto = null;
     salvar(); atualizarPainel(); assinatura = ""; agendarRender();
@@ -1300,6 +1316,85 @@
       s.addEventListener("click", () => irLance(g.chave, g.t));
       faixa.appendChild(s);
     }
+  }
+
+  // ---------------------------------------------------------------- retrato do lance
+  // O card do quadro de correções mostra uma foto do lance: o quadro do vídeo recortado no
+  // campo, com os desenhos daquele instante por cima. Sai do <video> e do próprio SVG que já
+  // está na tela, então não há nada novo para manter. Vídeo de outra origem sem CORS suja o
+  // canvas e o toDataURL lança — nesse caso o lance fica sem retrato, e está tudo bem.
+  const LARG_RETRATO = 320;
+
+  // As cores dos desenhos são variáveis do CSS (var(--eu)); num SVG solto, fora da página,
+  // elas não existem. Trocamos cada uma pelo valor que o tema está usando agora.
+  function resolverCores(texto) {
+    const raiz = getComputedStyle(document.documentElement);
+    return String(texto).replace(/var\(--([\w-]+)\)/g,
+      (_, nome) => raiz.getPropertyValue(`--${nome}`).trim() || "#888");
+  }
+
+  // O quadro do vídeo, recortado no campo. É síncrono de propósito: este é o único momento em
+  // que temos certeza de estar no quadro certo — meio segundo depois o cursor já pode ter
+  // andado. O resto (compor os desenhos, comprimir, gravar) pode acontecer com calma.
+  function quadroDoCampo() {
+    const v = $("video");
+    if (!v.videoWidth || !estado.recorte) return null;
+    const larg = LARG_RETRATO, alt = Math.max(1, Math.round(larg * RH() / RW()));
+    const c = document.createElement("canvas");
+    c.width = larg; c.height = alt;
+    c.getContext("2d").drawImage(v, RX(), RY(), RW(), RH(), 0, 0, larg, alt);
+    return c;
+  }
+
+  async function comporRetrato(c, itens) {
+    try {
+      const larg = c.width, alt = c.height;
+      const ctx = c.getContext("2d");
+
+      // o viewBox faz o recorte e a escala: o desenho cai exatamente sobre a imagem
+      const svg = document.createElementNS(svgNS, "svg");
+      svg.setAttribute("xmlns", svgNS);
+      svg.setAttribute("width", larg);
+      svg.setAttribute("height", alt);
+      svg.setAttribute("viewBox", `${RX()} ${RY()} ${RW()} ${RH()}`);
+      for (const a of itens) if (a.tipo !== "texto") desenharAnotacao(svg, a, 1);
+
+      const img = new Image();
+      img.src = "data:image/svg+xml;charset=utf-8," +
+                encodeURIComponent(resolverCores(new XMLSerializer().serializeToString(svg)));
+      await img.decode();
+      ctx.drawImage(img, 0, 0, larg, alt);
+
+      // os rótulos de texto moram numa camada HTML, não no SVG: vão para o canvas na mão
+      const k = larg / RW();
+      for (const a of itens) {
+        if (a.tipo !== "texto") continue;
+        ctx.font = `600 ${Math.max(7, a.esp * esc() * k)}px ui-sans-serif, system-ui, sans-serif`;
+        ctx.fillStyle = resolverCores(a.cor);
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(a.texto || "", (cx(a.pts[0][0]) - RX()) * k, (cy(a.pts[0][1]) - RY()) * k);
+      }
+      return c.toDataURL("image/jpeg", 0.72);
+    } catch (err) { return null; }      // vídeo de outra origem sem CORS: canvas sujo
+  }
+
+  // Chamado a cada mudança num lance. Só fotografa o que está mesmo à vista: apagar um desenho
+  // com o cursor longe dali não pode trocar a foto do lance por um quadro qualquer.
+  function tirarRetrato(t) {
+    if (!impressao || !estado.recorte) return;
+    if (Math.abs(($("video").currentTime || 0) - t) > 0.05) return;
+
+    const imp = impressao, chave = chaveLance(t);
+    const itens = estado.anotacoes.filter(a => chaveLance(a.t) === chave);
+    if (!itens.length) {
+      // Sem desenhos, o lance virou card órfão — e aí o retrato é a única lembrança que sobrou
+      // dele. Só quando nem card existe é que a foto deixa de servir a alguém.
+      if (!entradaDe(chave)) apagarRetrato(imp, chave);
+      return;
+    }
+    const c = quadroDoCampo();
+    if (c) comporRetrato(c, itens).then((dados) => { if (dados) guardarRetrato(imp, chave, dados); });
   }
 
   // ---------------------------------------------------------------- link vindo do quadro
@@ -1406,25 +1501,8 @@
   // Onde essa API nao existe (Firefox, Safari) a lista continua valendo, mas reabrir um
   // arquivo pede que o usuario o localize de novo; as anotacoes voltam sozinhas porque a
   // chave delas e a impressao digital nome|tamanho|modificado, que nao muda.
-  const BD = "analisador_video", LOJA = "handles", MAX_BIB = 24;
+  const MAX_BIB = 24;
   const temPicker = typeof window.showOpenFilePicker === "function";
-
-  function comBanco(modo, fn) {
-    return new Promise((ok, falha) => {
-      const req = indexedDB.open(BD, 1);
-      req.onupgradeneeded = () => req.result.createObjectStore(LOJA);
-      req.onerror = () => falha(req.error);
-      req.onsuccess = () => {
-        const bd = req.result;
-        try {
-          const tx = bd.transaction(LOJA, modo);
-          const p = fn(tx.objectStore(LOJA));
-          tx.oncomplete = () => { bd.close(); ok(p ? p.result : undefined); };
-          tx.onerror = () => { bd.close(); falha(tx.error); };
-        } catch (err) { bd.close(); falha(err); }
-      };
-    });
-  }
 
   const guardarHandle = (imp, h) => comBanco("readwrite", (l) => l.put(h, imp));
   const lerHandle = (imp) => comBanco("readonly", (l) => l.get(imp)).catch(() => null);
@@ -1990,7 +2068,18 @@
       agendarRender();
     });
     v.addEventListener("pause", agendarRender);
-    v.addEventListener("error", () => nota("Não consegui abrir esse vídeo (formato não suportado pelo navegador).", true));
+    v.addEventListener("error", () => {
+      // pode não ser o vídeo: um servidor sem Access-Control-Allow-Origin recusa o pedido que
+      // saiu com crossorigin. Tentamos de novo sem ele — o vídeo abre, e o preço é o lance
+      // desta partida ficar sem retrato, porque o canvas passa a sujar.
+      if (v.crossOrigin && !semCors) {
+        semCors = true;
+        v.crossOrigin = null;
+        v.load();
+        return;
+      }
+      nota("Não consegui abrir esse vídeo (formato não suportado pelo navegador).", true);
+    });
 
     $("slTempo").addEventListener("input", (e) => { v.pause(); irPara(Number(e.target.value)); });
     $("btPlay").addEventListener("click", () => v.paused ? v.play() : v.pause());
@@ -2049,6 +2138,9 @@
       const antes = chaveLance(a.t);
       a.t = instanteDoLance($("video").currentTime);
       migrarNota(antes, chaveLance(a.t));           // sozinha, a anotacao leva o lance inteiro
+      // o lance de origem só perde o retrato quando não sobra desenho nenhum lá
+      if (!estado.anotacoes.some(q => chaveLance(q.t) === antes)) apagarRetrato(impressao, antes);
+      tirarRetrato(a.t);
       salvar(); atualizarPainel(); assinatura = ""; agendarRender();
     });
     $("btApagarSel").addEventListener("click", () => {
@@ -2069,8 +2161,11 @@
                    ` Os lances que já têm anotação ou estágio ficam no quadro de correções,` +
                    ` marcados como órfãos. (dá para desfazer com Ctrl+Z)`)) return;
       empilhar();
+      const eram = agruparLances(estado.anotacoes).map(g => g.chave);
       estado.anotacoes = [];
       podarLances(estado.lances);
+      // o que não virou card órfão levou o retrato junto: ninguém mais o mostraria
+      for (const chave of eram) if (!entradaDe(chave)) apagarRetrato(impressao, chave);
       selecionado = null; lanceAberto = null;
       salvar(); atualizarPainel(); assinatura = ""; agendarRender();
     });
