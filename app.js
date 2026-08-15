@@ -6,10 +6,14 @@
   const RAIO_JOGADOR = 200;                 // PLAYER_SIZE / 2
   const RAZAO_CAMPO = MAX_X / MAX_Y;        // 2.0
   const LIM_MIN = -6000, LIM_MAX_X = MAX_X + 6000, LIM_MAX_Y = MAX_Y + 6000;
-  const CHAVE = "analisador_video:v1:";
-  const CHAVE_BIB = "analisador_video:v1:biblioteca";
-  const CHAVE_LATERAL = "analisador_video:v1:lateral";
-  const CHAVE_GUIA = "analisador_video:v1:guia";
+  // comum.js entra antes deste arquivo (ver index.html): dele saem as chaves do armazenamento,
+  // a identidade de um lance e o vocabulário do quadro — tudo o que a página kanban.html
+  // também lê, e que não pode divergir entre as duas.
+  const {
+    CHAVE, CHAVE_BIB, CHAVE_LATERAL, CHAVE_GUIA, CHAVE_BOT,
+    chaveLance, fmtTempo, resumoTipos, agruparLances,
+    ESTAGIOS, ESTAGIO_PADRAO, estagioDe, podarLances, lerEstado, lerBiblioteca, rotuloDe
+  } = window.Analisador;
   const VERSAO = 1;
   const svgNS = "http://www.w3.org/2000/svg";
 
@@ -28,6 +32,7 @@
   let guia = "videos";                // guia visivel na lateral: "videos" ou "lances"
   let lanceAberto = null;             // chave do lance com o editor de nota aberto
   let lanceMarcado = "";              // ultimo lance destacado, para nao mexer no DOM a cada quadro
+  let lanceAlvo = null;               // lance pedido pelo link do quadro, esperando o video abrir
   const minis = new Map();            // impressao -> miniatura, para nao reler o banco
   let fonteAtual = null;              // { fonte, handle } do video que esta abrindo
   let aguardandoReabrir = null;       // item da lista que o usuario foi localizar no disco
@@ -115,12 +120,6 @@
     const px = x2 - ux * L, py = y2 - uy * L, nx = -uy * L * A, ny = ux * L * A;
     el("polygon", { points: `${x2},${y2} ${px + nx},${py + ny} ${px - nx},${py - ny}`,
                     fill: cor, opacity: opacidade ?? 1 }, pai);
-  }
-
-  function fmtTempo(t) {
-    if (!isFinite(t)) return "0:00.000";
-    const m = Math.floor(t / 60), s = Math.floor(t % 60), ms = Math.floor((t % 1) * 1000);
-    return `${m}:${String(s).padStart(2, "0")}.${String(ms).padStart(3, "0")}`;
   }
 
   const fmtTol = (tol) => isFinite(tol) ? `±${String(tol).replace(".", ",")} s` : "sempre";
@@ -244,6 +243,16 @@
     atualizarRecorteUI();
     atualizarPainel();
     agendarRender();
+
+    // o vídeo que o quadro de correções pediu acabou de abrir: vai direto ao lance
+    if (lanceAlvo && lanceAlvo.imp === impressao) {
+      const alvo = lanceAlvo;
+      lanceAlvo = null;
+      $("convite").hidden = true;
+      alternarLateral(true);
+      escolherGuia("lances");
+      irLance(alvo.chave, alvo.t);
+    }
   }
 
   // Descobre os quadros/s medindo os deltas de mediaTime; so funciona onde
@@ -1056,9 +1065,12 @@
 
   // ------------------------------------------------------------------ lances
   // Um lance e tudo o que foi desenhado num mesmo instante: parar o video, marcar o passe,
-  // o adversario e a zona e um lance so. Como a identidade dele e o proprio instante, nao ha
-  // registro para criar nem para apagar — ele nasce do primeiro desenho e some com o ultimo.
-  const chaveLance = (t) => (t || 0).toFixed(3);
+  // o adversario e a zona e um lance so. A identidade dele e o proprio instante — a chave que
+  // o comum.js calcula e o quadro de correcoes (kanban.html) usa para achar o mesmo lance.
+  //
+  // O que estado.lances guarda NAO sao os desenhos: e so o que o usuario escreveu ou moveu no
+  // quadro (nota, estagio, prioridade). Por isso a entrada sobrevive a perda dos desenhos —
+  // e o card orfao — e some sozinha quando fica sem nenhum desses tres.
 
   // O seek nao devolve o mesmo currentTime exato quando se sai de um quadro e se volta a ele,
   // e dois instantes separados por microssegundos virariam dois lances. Por isso um desenho
@@ -1073,50 +1085,39 @@
     return dist <= 0.5 / fps ? melhor : t;
   }
 
-  function agruparLances() {
-    const m = new Map();
-    for (const a of estado.anotacoes) {
-      const k = chaveLance(a.t);
-      if (!m.has(k)) m.set(k, { chave: k, t: a.t, itens: [] });
-      m.get(k).itens.push(a);
-    }
-    return [...m.values()].sort((x, y) => x.t - y.t);
-  }
-
-  const notaDe = (chave) => (estado.lances && estado.lances[chave] && estado.lances[chave].nota) || "";
+  const entradaDe = (chave) => (estado.lances && estado.lances[chave]) || null;
+  const notaDe = (chave) => (entradaDe(chave) || {}).nota || "";
 
   function gravarNota(chave, texto) {
     if (!estado.lances) estado.lances = {};
     const limpo = texto.trim();
-    if (limpo) estado.lances[chave] = { nota: limpo };
-    else delete estado.lances[chave];
+    const e = estado.lances[chave] || {};
+    if (limpo) e.nota = limpo; else delete e.nota;
+    estado.lances[chave] = e;
+    podarLances(estado.lances);       // sem nota, sem estagio e sem prioridade nao ha o que guardar
     salvar();
   }
 
-  // A nota e do instante, nao dos desenhos. Quando o ultimo desenho de um lance muda de
-  // instante (o "Recolocar aqui"), o lance inteiro andou: a nota vai junto.
+  // A entrada e do instante, nao dos desenhos. Quando o ultimo desenho de um lance muda de
+  // instante (o "Recolocar aqui"), o lance inteiro andou: a nota e o card do quadro vao junto.
   function migrarNota(de, para) {
-    const texto = notaDe(de);
-    if (de === para || !texto) return;
-    if (estado.anotacoes.some(a => chaveLance(a.t) === de)) return;
-    const destino = notaDe(para);
-    estado.lances[para] = { nota: destino ? `${destino}\n${texto}` : texto };
+    const vem = entradaDe(de);
+    if (de === para || !vem) return;
+    if (estado.anotacoes.some(a => chaveLance(a.t) === de)) return;   // a origem continua viva
+    const fica = entradaDe(para);
+    if (!fica) {
+      estado.lances[para] = vem;
+    } else {
+      // o destino ja tinha card: as notas se juntam e o estagio de la manda, que e onde o
+      // trabalho ja estava
+      const juntas = [fica.nota, vem.nota].filter(Boolean).join("\n");
+      if (juntas) fica.nota = juntas;
+    }
     delete estado.lances[de];
   }
 
-  const PLURAL = {
-    seta: "setas", linha: "linhas", livre: "traços", retangulo: "retângulos",
-    elipse: "elipses", zona: "zonas", texto: "textos", jogador: "jogadores"
-  };
-
-  function resumoTipos(itens) {
-    const conta = new Map();
-    for (const a of itens) conta.set(a.tipo, (conta.get(a.tipo) || 0) + 1);
-    return [...conta].map(([tipo, n]) => n > 1 ? `${n} ${PLURAL[tipo] || tipo}` : `1 ${tipo}`).join(" · ");
-  }
-
   function desenharLances() {
-    const gs = agruparLances();
+    const gs = agruparLances(estado.anotacoes);
     const cont = $("contLances");
     cont.textContent = String(gs.length);
     cont.hidden = gs.length === 0;
@@ -1162,6 +1163,16 @@
     nome.className = "nome";
     nome.textContent = tipos;
     cabeca.append(tempo, nome);
+
+    // um lance que já andou no quadro de correções diz onde parou, para não ser reanalisado à toa
+    const fase = estagioDe(entradaDe(g.chave));
+    if (fase !== ESTAGIO_PADRAO) {
+      const chip = document.createElement("span");
+      chip.className = "l-fase";
+      chip.textContent = ESTAGIOS.find(x => x.chave === fase).nome;
+      chip.title = "Estágio no quadro de correções";
+      cabeca.appendChild(chip);
+    }
 
     const escrita = document.createElement("span");
     escrita.className = "l-nota";
@@ -1233,8 +1244,11 @@
   }
 
   function apagarLance(g) {
+    // aqui a exclusão é deliberada e leva tudo, inclusive o card no quadro de correções;
+    // apagar os desenhos um a um é outra história — lá o card fica, órfão
     if (!confirm(`Apagar o lance de ${fmtTempo(g.t)} — ${resumoTipos(g.itens)}` +
-                 `${notaDe(g.chave) ? " e a anotação dele" : ""}? (dá para desfazer com Ctrl+Z)`)) return;
+                 `${entradaDe(g.chave) ? ", a anotação e o card dele no quadro" : ""}?` +
+                 ` (dá para desfazer com Ctrl+Z)`)) return;
     empilhar();
     const fora = new Set(g.itens.map(a => a.id));
     estado.anotacoes = estado.anotacoes.filter(a => !fora.has(a.id));
@@ -1259,7 +1273,7 @@
     const t = $("video").currentTime || 0;
     let alvo = "";
     let dist = 0.5;
-    for (const g of agruparLances()) {
+    for (const g of agruparLances(estado.anotacoes)) {
       const d = Math.abs(g.t - t);
       if (d <= dist) { dist = d; alvo = g.chave; }
     }
@@ -1276,7 +1290,7 @@
     faixa.textContent = "";
     const dur = $("video").duration;
     if (!isFinite(dur) || dur <= 0) return;
-    for (const g of agruparLances()) {
+    for (const g of agruparLances(estado.anotacoes)) {
       const nota = notaDe(g.chave);
       const s = document.createElement("span");
       s.className = "tique" + (nota ? " com-nota" : "");
@@ -1286,6 +1300,53 @@
       s.addEventListener("click", () => irLance(g.chave, g.t));
       faixa.appendChild(s);
     }
+  }
+
+  // ---------------------------------------------------------------- link vindo do quadro
+  // O card do quadro de correções aponta para index.html#lance=<impressão>@<chave>. A âncora
+  // vale também em file://, onde não há servidor para ler uma query string.
+  const enderecoDoLance = (imp, chave) => `#lance=${encodeURIComponent(imp)}@${chave}`;
+
+  function lerAlvoDoEndereco() {
+    const m = /^#lance=(.+)@([\d.]+)$/.exec(location.hash || "");
+    if (!m) return null;
+    try {
+      return { imp: decodeURIComponent(m[1]), chave: m[2], t: Number(m[2]) };
+    } catch (err) { return null; }
+  }
+
+  // Chamado uma vez, ao abrir a página: descobre de qual vídeo é o lance pedido e o abre —
+  // sozinho quando é um link, e por um convite quando é arquivo do disco, porque reabrir um
+  // handle exige requestPermission, que só vale sob um gesto do usuário.
+  function atenderAlvo() {
+    const alvo = lerAlvoDoEndereco();
+    if (!alvo || !isFinite(alvo.t)) return;
+    // o link se esgota no primeiro uso: um F5 depois não deve arrastar o vídeo de volta
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (err) {}
+
+    if (alvo.imp === impressao) { escolherGuia("lances"); irLance(alvo.chave, alvo.t); return; }
+
+    const it = biblioteca.find(x => x.imp === alvo.imp);
+    const s = lerEstado(alvo.imp);
+    const info = (it && it.origem) ? it : (s && s.video) || null;
+    if (!info) return nota("O lance pedido é de um vídeo que não está mais guardado aqui.", true);
+
+    lanceAlvo = alvo;
+    if (info.origem === "url" && info.url) return carregarVideoUrl(info.url, { titulo: it && it.titulo });
+    convidar(alvo, it ? rotuloDe(it) : (s.video.nome || "o vídeo"));
+  }
+
+  // A faixa é o gesto que falta: o clique nela é o que autoriza o navegador a reabrir o arquivo.
+  function convidar(alvo, rotulo) {
+    $("txtConvite").textContent = `Lance de ${fmtTempo(alvo.t)} em “${rotulo}”.`;
+    $("convite").hidden = false;
+    $("btConvite").onclick = () => {
+      $("convite").hidden = true;
+      const it = biblioteca.find(x => x.imp === alvo.imp);
+      if (it) abrirDaBiblioteca(it);
+      else nota(`Abra “${rotulo}” para ver o lance de ${fmtTempo(alvo.t)}.`);
+    };
+    $("btDispensarConvite").onclick = () => { $("convite").hidden = true; lanceAlvo = null; };
   }
 
   function escolherGuia(nome) {
@@ -1401,6 +1462,10 @@
 
     const tirar = () => {
       v.removeEventListener("seeked", tirar);
+      // Só se o cursor tiver mesmo chegado ao alvo desta miniatura. Sem isso, um 'seeked' de
+      // outra pessoa — o link vindo do quadro de correções, uma seta do usuário — seria
+      // confundido com o nosso e teria o cursor devolvido para trás.
+      if (Math.abs(v.currentTime - alvo) > 0.05) return;
       const dados = quadroAtual();
       if (Math.abs(v.currentTime - voltar) > 0.001) v.currentTime = voltar;
       if (!dados) return;
@@ -1413,13 +1478,6 @@
 
     if (alvo > voltar + 0.05) { v.addEventListener("seeked", tirar); v.currentTime = alvo; }
     else tirar();
-  }
-
-  function lerBiblioteca() {
-    try {
-      const b = JSON.parse(localStorage.getItem(CHAVE_BIB) || "[]");
-      return Array.isArray(b) ? b.filter(x => x && x.imp && x.nome) : [];
-    } catch (err) { return []; }
   }
 
   function salvarBiblioteca() {
@@ -1503,10 +1561,6 @@
     desenharBiblioteca();
     nota(`"${rotuloDe(it)}" saiu da lista — as anotações dele continuam guardadas.`);
   }
-
-  // O titulo e a descricao sao do usuario e vivem na lista; 'nome' continua sendo a
-  // identidade tecnica (arquivo ou link) e so aparece na dica sobre o item.
-  const rotuloDe = (it) => (it && it.titulo) || (it && it.nome) || "—";
 
   function desenharBiblioteca() {
     const faixa = $("biblio");
@@ -1708,7 +1762,6 @@
   // quem raspa e o servidor local (servidor.js + lugo/partidas.js), e daqui so sai um fetch
   // para o proprio servidor. Aberto direto pelo file://, o /api/saude falha e o painel
   // simplesmente nao aparece — o resto do analisador continua igual.
-  const CHAVE_BOT = "analisador_video:v1:bot";
   const RESULTADOS = { "vitória": "venceu", "empate": "empatou", "derrota": "perdeu" };
   let buscandoPartidas = false;
 
@@ -2010,9 +2063,14 @@
     });
     $("btLimparTudo").addEventListener("click", () => {
       if (!estado.anotacoes.length) return;
-      if (!confirm(`Apagar as ${estado.anotacoes.length} anotações? (dá para desfazer com Ctrl+Z)`)) return;
+      // some com os desenhos, não com o trabalho: um lance já anotado ou já movido no quadro
+      // vira um card órfão, e só some de lá pela mão do usuário
+      if (!confirm(`Apagar as ${estado.anotacoes.length} anotações?` +
+                   ` Os lances que já têm anotação ou estágio ficam no quadro de correções,` +
+                   ` marcados como órfãos. (dá para desfazer com Ctrl+Z)`)) return;
       empilhar();
-      estado.anotacoes = []; estado.lances = {};
+      estado.anotacoes = [];
+      podarLances(estado.lances);
       selecionado = null; lanceAberto = null;
       salvar(); atualizarPainel(); assinatura = ""; agendarRender();
     });
@@ -2078,6 +2136,20 @@
     // fechar a aba nao pode comer a ultima edicao presa no atraso de 400 ms
     window.addEventListener("pagehide", salvarPendente);
 
+    // O quadro de correções mexe no MESMO registro deste vídeo, de outra aba. Como aqui o
+    // estado inteiro é regravado com 400 ms de atraso, sem isto a próxima gravação daqui
+    // desfaria o que foi movido lá. Adotamos só o campo 'lances': os desenhos podem estar
+    // sendo editados neste instante, e quem manda neles é esta página.
+    window.addEventListener("storage", (e) => {
+      if (!impressao || e.key !== CHAVE + impressao || !e.newValue) return;
+      let novo = null;
+      try { novo = JSON.parse(e.newValue); } catch (err) { return; }
+      if (!novo || !novo.lances || typeof novo.lances !== "object") return;
+      estado.lances = novo.lances;
+      atualizarPainel();
+      assinatura = ""; agendarRender();
+    });
+
     // com o seletor da File System Access API o arquivo pode ser reaberto depois do F5;
     // sem ele, resta o <input type=file> de sempre
     $("btEscolher").hidden = !temPicker;
@@ -2097,6 +2169,7 @@
     let guiaSalva = "videos";
     try { guiaSalva = localStorage.getItem(CHAVE_GUIA) || "videos"; } catch (err) {}
     escolherGuia(guiaSalva === "lances" ? "lances" : "videos");
+    atenderAlvo();          // por último: precisa da biblioteca lida e das guias montadas
     atualizarRotuloEsp();
     atualizarBotoesHist();
     ligarPainelBot();

@@ -36,6 +36,27 @@ Um lance não é um registro à parte: ele nasce do primeiro desenho daquele ins
 último. Por isso um desenho novo que caia a menos de meio quadro de outro adota o instante dele —
 sem isso, a imprecisão do `seek` partiria o mesmo quadro em dois lances.
 
+## Quadro de correções
+
+Todo lance é uma melhoria em potencial no bot. A página `kanban.html` — o link **Quadro** no
+alto do analisador — junta os lances de **todas as partidas** guardadas e os organiza em cinco
+colunas: **Análise**, **Desenvolvimento**, **Testes**, **Resolvido** e **Arquivados**.
+
+Cada card traz o instante, a partida, a anotação e o que foi desenhado ali. Dá para arrastá-lo
+entre as colunas (ou usar as setas `◀ ▶`, que funcionam no toque e no teclado), marcar a
+**prioridade**, escrever a anotação sem sair do quadro e voltar ao vídeo naquele exato instante
+pelo `↗`. O filtro de cima abre mostrando só o que já tem trabalho — anotação, prioridade ou
+estágio; desligue-o para ver também os rabiscos de análise.
+
+Um card **órfão** é um lance cujos desenhos foram apagados no analisador. Ele fica, marcado,
+até você arquivá-lo ou descartá-lo: o que já foi escrito e movido não some sozinho. O `✕` da
+guia Lances, esse sim, apaga o lance inteiro de propósito — desenhos, anotação e card.
+
+Não há banco novo. O quadro é uma leitura transversal do que cada vídeo já guarda em
+`localStorage`, e mover um card só reescreve o campo `lances` daquele vídeo — por isso tudo
+continua viajando no `Exportar JSON`. As duas páginas podem ficar abertas lado a lado: elas
+ouvem o evento `storage` e uma adota o que a outra mudou, sem gravar por cima.
+
 ## Partidas do bot
 
 Digite o nome do bot na barra lateral e as cinco partidas mais recentes dele aparecem com
@@ -63,8 +84,13 @@ vez de escolher por conta própria.
 
 ## Arquivos
 
+As cinco primeiras linhas são o site inteiro: sem build e sem dependência, é o que vai para o
+Pages. As duas últimas só existem na sua máquina.
+
 | | |
 |---|---|
-| `index.html`, `styles.css`, `app.js` | o analisador — não tem build nem dependência; é isto que vai para o Pages |
+| `index.html`, `app.js` | o analisador de vídeo |
+| `kanban.html`, `kanban.js` | o quadro de correções, que lê os lances de todas as partidas |
+| `comum.js`, `styles.css` | o que as duas páginas dividem: chaves do armazenamento, a identidade de um lance, o vocabulário do quadro e a folha de estilo |
 | `servidor.js` | só local: serve esta pasta e expõe `/api/partidas?bot=NOME&n=5` |
 | `lugo/partidas.js` | só local: a raspagem do lugobots.ai; também roda sozinho pelo terminal |

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quadro de correções</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="quadro" id="quadro">
+
+  <header class="topo">
+    <h1>Quadro de correções</h1>
+    <span class="status" id="resumoQuadro"></span>
+    <select id="selPartida" title="Mostrar só os lances de uma partida"></select>
+    <input type="text" id="txtBusca" placeholder="buscar na anotação…" title="Filtra pela anotação e pela partida">
+    <label class="chk" title="Um lance sem anotação, sem prioridade e ainda em Análise é só um rabisco; ligado, ele fica fora do quadro">
+      <input type="checkbox" id="ckAnotados" checked> só os que já têm trabalho
+    </label>
+    <a class="ir-quadro" href="index.html" title="Voltar para o analisador de vídeo">↩ Analisador</a>
+  </header>
+
+  <div class="colunas" id="colunas"></div>
+
+  <p class="vazio-quadro rot" id="vazioQuadro" hidden></p>
+</div>
+
+<script src="comum.js"></script>
+<script src="kanban.js"></script>
+</body>
+</html>

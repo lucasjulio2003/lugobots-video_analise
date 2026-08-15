@@ -227,6 +227,11 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
 }
 /* o lápis fica aceso onde já há o que ler, mesmo sem o mouse por cima da linha */
 .lance.tem-nota .acao.anotar { opacity: 1; color: var(--eu); }
+/* onde o lance parou no quadro de correções; em Análise não se diz nada, que é o normal */
+.lance .l-fase {
+  flex: none; padding: 0 5px; border-radius: 8px; font-size: 10.5px; font-weight: 600;
+  color: var(--eu); background: color-mix(in srgb, var(--eu) 14%, transparent);
+}
 /* a nota é texto corrido e merece mais espaço que o título de um vídeo */
 .lance .editor textarea { min-height: 64px; }
 
@@ -333,6 +338,114 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
 .selinfo.vazia .dica-sel {
   display: block; position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
 }
+
+/* passagem entre as duas páginas: o analisador e o quadro de correções */
+.ir-quadro {
+  flex: none; padding: 4px 9px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  text-decoration: none; white-space: nowrap;
+  color: var(--eu); border: 1px solid color-mix(in srgb, var(--eu) 45%, transparent);
+}
+.ir-quadro:hover { background: color-mix(in srgb, var(--eu) 13%, transparent); }
+.ir-quadro.bloco { display: block; text-align: center; margin-top: 2px; }
+
+/* o convite existe porque reabrir um arquivo do disco exige um gesto do usuário */
+.convite { background: color-mix(in srgb, var(--eu) 12%, var(--painel)); }
+
+/* ================================================================ quadro de correções
+   Página à parte (kanban.html), mesma paleta e mesmos controles. As colunas ocupam a
+   altura toda e cada uma rola por dentro — a página em si não rola. */
+.quadro { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.quadro .topo { flex-wrap: wrap; }
+.quadro #txtBusca { width: 190px; }
+.colunas {
+  flex: 1; min-height: 0; display: flex; gap: 10px;
+  padding: 10px; overflow-x: auto;
+}
+.coluna {
+  flex: 1 0 232px; max-width: 340px; min-width: 0;
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 8px; border-radius: 9px;
+  background: color-mix(in srgb, var(--texto) 5%, transparent);
+  border: 1px solid var(--borda);
+}
+.col-topo { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.col-topo strong { font-size: 13px; }
+.col-topo .cont {
+  padding: 0 6px; border-radius: 8px; font-size: 11px; font-weight: 600;
+  background: color-mix(in srgb, var(--texto) 12%, transparent); color: var(--fraco);
+}
+/* o fim da fila também é um lugar de soltar: a pilha vazia precisa ter altura */
+.pilha { flex: 1; min-height: 60px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.pilha.alvo-fim { box-shadow: inset 0 -3px 0 -1px var(--eu); }
+.oco {
+  margin: 0; padding: 14px 8px; text-align: center;
+  border: 1px dashed var(--borda); border-radius: 8px;
+}
+
+.card {
+  border: 1px solid var(--borda); border-left: 4px solid var(--borda);
+  border-radius: 8px; padding: 7px 8px; background: var(--painel);
+  cursor: grab; display: flex; flex-direction: column; gap: 5px;
+}
+.card:hover { border-color: color-mix(in srgb, var(--eu) 45%, transparent); }
+.card.viajando { opacity: .4; }
+.card.alvo-antes { box-shadow: 0 -3px 0 -1px var(--eu); }
+.card.p-alta   { border-left-color: var(--adv); }
+.card.p-media  { border-left-color: var(--bola); }
+.card.p-baixa  { border-left-color: var(--manter); }
+.card.orfao { border-style: dashed; }
+
+.c-topo { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.c-tempo {
+  flex: none; padding: 2px 5px; border-radius: 4px;
+  font: 600 11.5px/1.2 ui-monospace, Consolas, monospace;
+  background: color-mix(in srgb, var(--texto) 8%, transparent);
+}
+.c-partida {
+  min-width: 0; font-size: 11.5px; color: var(--fraco);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.c-nota {
+  margin: 0; font-size: 12.5px; line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.c-nota.sem { color: var(--fraco); font-style: italic; }
+.c-pe { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.orfao .c-pe { color: var(--adv); }
+
+.c-acoes { display: flex; align-items: center; gap: 3px; }
+.c-acoes .acao {
+  padding: 2px 6px; font-size: 12px; line-height: 1.4;
+  color: var(--fraco); background: none; border: 0; border-radius: 5px;
+  text-decoration: none; cursor: pointer;
+}
+.c-acoes .acao:hover:not(:disabled) { color: var(--texto); background: color-mix(in srgb, var(--texto) 9%, transparent); }
+.c-acoes .acao:disabled { opacity: .3; cursor: default; }
+.c-acoes .fechar:hover { color: var(--adv); }
+/* a prioridade é um seletor, mas não pode gritar mais alto que a anotação: só ganha moldura
+   quando o mouse chega perto. A cor dela repete a da barra lateral do card. */
+.c-acoes .c-prio {
+  flex: 1; min-width: 0; padding: 1px 3px; font-size: 11px;
+  color: var(--fraco); background: none; border-color: transparent;
+}
+.c-acoes .c-prio:hover, .c-acoes .c-prio:focus { border-color: var(--borda); }
+.card.p-alta  .c-prio { color: var(--adv); font-weight: 600; }
+.card.p-media .c-prio { color: var(--bola); font-weight: 600; }
+.card.p-baixa .c-prio { color: var(--manter); font-weight: 600; }
+
+/* arquivado é trabalho encerrado: fica na tela, mas sem disputar a atenção */
+.col-arquivado .card { opacity: .72; }
+.col-arquivado .card:hover { opacity: 1; }
+
+.c-editor { display: flex; flex-direction: column; gap: 5px; }
+.c-editor textarea {
+  width: 100%; font: inherit; font-size: 12.5px; line-height: 1.4;
+  padding: 5px 6px; border-radius: 6px; border: 1px solid var(--eu);
+  background: var(--painel); color: var(--texto); resize: vertical; min-height: 70px;
+}
+.c-editor button { align-self: flex-end; }
+
+.vazio-quadro { padding: 0 14px 16px; }
 
 @media (max-width: 760px) {
   .lateral { position: absolute; top: 0; bottom: 0; box-shadow: 0 0 24px rgba(0,0,0,.28); }
