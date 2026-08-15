@@ -15,6 +15,10 @@
   // id do card -> foto do lance (ou null quando aquele lance não tem). Fica em memória para o
   // quadro não reler o banco a cada redesenho — e para a imagem não piscar ao mover um card.
   const retratos = new Map();
+  // A foto mora no IndexedDB, que não dispara evento nenhum quando muda: um lance antigo
+  // fotografado agora, no analisador, chegaria aqui como "não tem" para sempre. Por isso as
+  // faltas são esquecidas quando há notícia do outro lado ou quando se volta para esta aba.
+  const esquecerFaltas = () => { for (const [k, v] of retratos) if (!v) retratos.delete(k); };
 
   const $ = (id) => document.getElementById(id);
 
@@ -434,6 +438,13 @@
     // e fechar o editor relê tudo de qualquer forma.
     window.addEventListener("storage", (e) => {
       if (!e.key || !e.key.startsWith(CHAVE) || editando) return;
+      esquecerFaltas();
+      desenhar();
+    });
+    // voltar para esta aba é justamente o momento de reler o que faltava
+    window.addEventListener("focus", () => {
+      if (editando) return;
+      esquecerFaltas();
       desenhar();
     });
     // uma anotação presa no atraso de 400 ms não pode morrer com a aba

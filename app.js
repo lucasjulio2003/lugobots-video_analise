@@ -13,7 +13,7 @@
     CHAVE, CHAVE_BIB, CHAVE_LATERAL, CHAVE_GUIA, CHAVE_BOT,
     chaveLance, fmtTempo, resumoTipos, agruparLances,
     ESTAGIOS, ESTAGIO_PADRAO, estagioDe, podarLances, lerEstado, lerBiblioteca, rotuloDe,
-    comBanco, guardarRetrato, apagarRetrato
+    comBanco, guardarRetrato, lerRetrato, apagarRetrato
   } = window.Analisador;
   const VERSAO = 1;
   const svgNS = "http://www.w3.org/2000/svg";
@@ -1277,6 +1277,7 @@
   // Leva o video ao instante do lance e, se a guia estiver a vista, traz a linha dele junto.
   function irLance(chave, t) {
     irPara(t);
+    retratarSeFaltar(chave, t);
     if (guia !== "lances" || $("app").classList.contains("recolhida")) return;
     const linha = $("listaLances").querySelector(`[data-lance="${chave}"]`);
     if (linha) linha.scrollIntoView({ block: "nearest" });
@@ -1395,6 +1396,22 @@
     }
     const c = quadroDoCampo();
     if (c) comporRetrato(c, itens).then((dados) => { if (dados) guardarRetrato(imp, chave, dados); });
+  }
+
+  // Lance feito antes desta versão — ou vindo de um JSON importado — não tem foto nenhuma.
+  // Visitá-lo é o que a tira: ao chegar nele, o quadro certo está justamente na tela. Assim o
+  // acervo antigo se preenche sozinho, à medida que os lances vão sendo revistos.
+  function retratarSeFaltar(chave, t) {
+    const imp = impressao;
+    if (!imp || !estado.recorte) return;
+    lerRetrato(imp, chave).then((tem) => {
+      if (tem || impressao !== imp) return;
+      const v = $("video");
+      if (Math.abs((v.currentTime || 0) - t) <= 0.05) return tirarRetrato(t);
+      // o salto ainda está a caminho: fotografa quando ele chegar
+      const aoChegar = () => { v.removeEventListener("seeked", aoChegar); tirarRetrato(t); };
+      v.addEventListener("seeked", aoChegar);
+    });
   }
 
   // ---------------------------------------------------------------- link vindo do quadro
