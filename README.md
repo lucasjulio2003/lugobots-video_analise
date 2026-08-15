@@ -56,8 +56,14 @@ miniaturas.
 Lance marcado **antes desta versão** não tem foto: ela é tirada quando o lance é criado ou
 alterado, e ninguém volta no tempo. O acervo antigo se preenche à medida que você o revisita —
 abra o vídeo e clique no lance (na guia Lances, na régua de tiques ou pelo `↗` do card): ao
-chegar nele, o analisador vê que falta foto e tira. Um lance que o navegador não deixa
-fotografar aparece sem imagem, e o card continua inteiro.
+chegar nele, o analisador vê que falta foto e espera as duas condições que ela exige (quadro já
+decodificado e cursor parado no instante do lance) antes de disparar. Um lance que o navegador
+não deixa fotografar aparece sem imagem, e o card continua inteiro.
+
+É por isso, também, que a **miniatura da lista de vídeos** não dá mais o pulo até os 3 s que
+dava: ela mexia no cursor por baixo de quem estava usando o vídeo — inclusive da foto do lance,
+que saía do quadro errado ou nem saía. Agora ela sai do quadro que já está na tela, e melhora
+sozinha na primeira vez que você vai a um ponto adiante do primeiro segundo.
 
 O empecilho é o CORS: um `<canvas>` que recebe um quadro de vídeo de outra origem fica "sujo" e
 não pode mais ser lido. Por isso o vídeo aberto por link é pedido com `crossorigin`, e, se o

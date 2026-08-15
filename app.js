@@ -59,6 +59,7 @@
   let entradaTexto = null;
   let importadoPendente = false;      // JSON importado antes de abrir o video
   let semCors = false;                // o video atual ja voltou a carregar sem crossorigin
+  let jaAbriu = false;                // o video atual ja chegou a abrir ao menos uma vez
 
   // 'lances' guarda so o que o usuario escreveu, indexado pelo instante (ver chaveLance):
   // o lance em si nao e um registro, e o conjunto dos desenhos que dividem aquele instante.
@@ -167,6 +168,7 @@
     // e aí o ouvinte de erro tenta de novo sem o atributo (ver ligar()): o vídeo abre igual,
     // só fica sem retrato. Arquivo do disco chega por blob:, mesma origem, e não precisa disso.
     semCors = false;
+    jaAbriu = false;
     v.crossOrigin = fonte.revogavel ? null : "anonymous";
     v.src = fonte.src;
     v.load();
@@ -225,6 +227,7 @@
 
   function aoCarregarMetadados() {
     const v = $("video");
+    jaAbriu = true;                     // daqui em diante, erro é erro (ver o ouvinte de 'error')
     vw = v.videoWidth || 1280;
     vh = v.videoHeight || 720;
     $("tela").setAttribute("viewBox", `0 0 ${vw} ${vh}`);
@@ -1339,7 +1342,7 @@
   // andado. O resto (compor os desenhos, comprimir, gravar) pode acontecer com calma.
   function quadroDoCampo() {
     const v = $("video");
-    if (!v.videoWidth || !estado.recorte) return null;
+    if (!v.videoWidth || v.readyState < 2 || !estado.recorte) return null;
     const larg = LARG_RETRATO, alt = Math.max(1, Math.round(larg * RH() / RW()));
     const c = document.createElement("canvas");
     c.width = larg; c.height = alt;
@@ -1384,7 +1387,17 @@
   // com o cursor longe dali não pode trocar a foto do lance por um quadro qualquer.
   function tirarRetrato(t) {
     if (!impressao || !estado.recorte) return;
-    if (Math.abs(($("video").currentTime || 0) - t) > 0.05) return;
+    const v = $("video");
+    if (Math.abs((v.currentTime || 0) - t) > 0.05) return;
+
+    // HAVE_CURRENT_DATA. Com menos que isso o <video> tem tamanho e duração, mas nenhum quadro
+    // decodificado: o drawImage não copia nada e a foto sairia só com os riscos, sobre o preto.
+    // Acontece de verdade ao chegar num lance logo que o vídeo abre — o link vindo do quadro.
+    if (v.readyState < 2) {
+      const quandoTiver = () => { v.removeEventListener("loadeddata", quandoTiver); tirarRetrato(t); };
+      v.addEventListener("loadeddata", quandoTiver);
+      return;
+    }
 
     const imp = impressao, chave = chaveLance(t);
     const itens = estado.anotacoes.filter(a => chaveLance(a.t) === chave);
@@ -1406,11 +1419,24 @@
     if (!imp || !estado.recorte) return;
     lerRetrato(imp, chave).then((tem) => {
       if (tem || impressao !== imp) return;
+      // Duas condições, e nenhuma delas chega na hora: o vídeo precisa ter quadro decodificado
+      // (pode estar abrindo agora) e estar parado no instante do lance (o salto está a
+      // caminho). Esperamos as duas, com um teto de tentativas para nunca virar laço.
       const v = $("video");
-      if (Math.abs((v.currentTime || 0) - t) <= 0.05) return tirarRetrato(t);
-      // o salto ainda está a caminho: fotografa quando ele chegar
-      const aoChegar = () => { v.removeEventListener("seeked", aoChegar); tirarRetrato(t); };
-      v.addEventListener("seeked", aoChegar);
+      let restam = 8;
+      const desistir = () => {
+        v.removeEventListener("loadeddata", tentar);
+        v.removeEventListener("seeked", tentar);
+      };
+      const tentar = () => {
+        if (impressao !== imp || restam-- <= 0) return desistir();
+        if (v.readyState < 2 || Math.abs((v.currentTime || 0) - t) > 0.05) return;
+        desistir();
+        tirarRetrato(t);
+      };
+      v.addEventListener("loadeddata", tentar);
+      v.addEventListener("seeked", tentar);
+      tentar();
     });
   }
 
@@ -1545,34 +1571,30 @@
     } catch (err) { return null; }
   }
 
-  // Roda uma vez por video, logo depois de abrir: pula o comeco (costuma ser preto), tira
-  // o retrato e devolve o cursor para onde estava, sem o usuario perceber.
-  function prepararMiniatura() {
+  // A miniatura da lista sai do quadro que JÁ está na tela — nunca de um salto próprio.
+  //
+  // Antes ela pulava até os 3 s (o começo costuma ser preto) e devolvia o cursor. Esse salto
+  // brigava com todo mundo que também quer o cursor: o retrato de um lance, o link vindo do
+  // quadro de correções, a primeira seta do usuário. Ora o salto alheio era desfeito, ora a
+  // foto do lance saía do quadro errado. Agora ninguém mexe no vídeo por baixo de ninguém:
+  // pegamos o primeiro quadro ao abrir e, na primeira vez que o usuário for a um ponto adiante
+  // do primeiro segundo, trocamos por aquele — que é bem mais representativo da partida.
+  function prepararMiniatura(exigirAdiante) {
     const imp = impressao;
     const it = biblioteca.find(x => x.imp === imp);
     if (!it || it.temMini) return;
     const v = $("video");
-    const voltar = v.currentTime;
-    const alvo = Math.min(3, (isFinite(v.duration) ? v.duration : 0) / 2);
+    if (v.readyState < 2) return;                       // sem quadro decodificado não há o que copiar
+    if (exigirAdiante && v.currentTime < 1) return;
 
-    const tirar = () => {
-      v.removeEventListener("seeked", tirar);
-      // Só se o cursor tiver mesmo chegado ao alvo desta miniatura. Sem isso, um 'seeked' de
-      // outra pessoa — o link vindo do quadro de correções, uma seta do usuário — seria
-      // confundido com o nosso e teria o cursor devolvido para trás.
-      if (Math.abs(v.currentTime - alvo) > 0.05) return;
-      const dados = quadroAtual();
-      if (Math.abs(v.currentTime - voltar) > 0.001) v.currentTime = voltar;
-      if (!dados) return;
-      minis.set(imp, dados);
-      desenharBiblioteca();
-      guardarMini(imp, dados)
-        .then(() => { it.temMini = true; salvarBiblioteca(); })
-        .catch(() => {});
-    };
-
-    if (alvo > voltar + 0.05) { v.addEventListener("seeked", tirar); v.currentTime = alvo; }
-    else tirar();
+    const dados = quadroAtual();
+    if (!dados) return;
+    minis.set(imp, dados);
+    desenharBiblioteca();
+    // 'temMini' só depois do quadro adiante: até lá o retrato provisório pode ser melhorado
+    guardarMini(imp, dados)
+      .then(() => { if (exigirAdiante) { it.temMini = true; salvarBiblioteca(); } })
+      .catch(() => {});
   }
 
   function salvarBiblioteca() {
@@ -2073,9 +2095,12 @@
 
     v.addEventListener("loadedmetadata", aoCarregarMetadados);
     // loadeddata, e nao loadedmetadata: so aqui o primeiro quadro existe para ser desenhado
-    v.addEventListener("loadeddata", prepararMiniatura);
+    v.addEventListener("loadeddata", () => prepararMiniatura(false));
     v.addEventListener("timeupdate", agendarRender);
-    v.addEventListener("seeked", () => { assinatura = ""; agendarRender(); });
+    v.addEventListener("seeked", () => {
+      prepararMiniatura(true);          // aproveita o quadro para onde o usuario foi
+      assinatura = ""; agendarRender();
+    });
     v.addEventListener("durationchange", () => {
       $("slTempo").max = String(isFinite(v.duration) ? v.duration : 0);
       desenharTiques();
@@ -2086,10 +2111,13 @@
     });
     v.addEventListener("pause", agendarRender);
     v.addEventListener("error", () => {
-      // pode não ser o vídeo: um servidor sem Access-Control-Allow-Origin recusa o pedido que
+      // Pode não ser o vídeo: um servidor sem Access-Control-Allow-Origin recusa o pedido que
       // saiu com crossorigin. Tentamos de novo sem ele — o vídeo abre, e o preço é o lance
       // desta partida ficar sem retrato, porque o canvas passa a sujar.
-      if (v.crossOrigin && !semCors) {
+      //
+      // Só na PRIMEIRA abertura, porém: se este vídeo já abriu com crossorigin, uma falha
+      // depois é falha de verdade, e desistir do CORS aqui condenaria as fotos dele à toa.
+      if (v.crossOrigin && !semCors && !jaAbriu) {
         semCors = true;
         v.crossOrigin = null;
         v.load();
