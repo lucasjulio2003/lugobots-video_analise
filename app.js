@@ -1407,8 +1407,17 @@
       if (!entradaDe(chave)) apagarRetrato(imp, chave);
       return;
     }
-    const c = quadroDoCampo();
-    if (c) comporRetrato(c, itens).then((dados) => { if (dados) guardarRetrato(imp, chave, dados); });
+    // espera o quadro estar mesmo na tela antes de copiá-lo, senão a foto sai só com os riscos
+    const capturar = (ultima) => {
+      if (impressao !== imp || Math.abs((v.currentTime || 0) - t) > 0.05) return;
+      const c = quadroDoCampo();
+      if (!c) return;
+      // Escuro pode ser a verdade (partida que começa no preto) ou só o decodificador atrasado.
+      // Uma segunda chance separa os dois casos sem inventar imagem nenhuma.
+      if (!ultima && quaseTudoPreto(c)) { setTimeout(() => capturar(true), 400); return; }
+      comporRetrato(c, itens).then((dados) => { if (dados) guardarRetrato(imp, chave, dados); });
+    };
+    comQuadroNaTela(() => capturar(false));
   }
 
   // Lance feito antes desta versão — ou vindo de um JSON importado — não tem foto nenhuma.
@@ -1557,16 +1566,43 @@
   const lerMini = (imp) => comBanco("readonly", (l) => l.get(`mini:${imp}`)).catch(() => null);
   const apagarMini = (imp) => comBanco("readwrite", (l) => l.delete(`mini:${imp}`)).catch(() => {});
 
+  // O <video> anuncia readyState 2 assim que TEM um quadro, mas nem sempre ele já foi entregue
+  // à tela — e o drawImage feito nesse vão sai preto. requestVideoFrameCallback avisa quando um
+  // quadro é mesmo apresentado; num vídeo pausado ele pode nunca vir (não há quadro novo), daí
+  // o prazo curto que solta a captura de qualquer jeito. Onde a API não existe, só o prazo.
+  function comQuadroNaTela(fn) {
+    const v = $("video");
+    let feito = false;
+    const uma = () => { if (feito) return; feito = true; fn(); };
+    if (typeof v.requestVideoFrameCallback === "function") v.requestVideoFrameCallback(uma);
+    setTimeout(uma, 250);
+  }
+
+  // Um quadro quase todo escuro não serve de retrato: é o vídeo antes de a imagem entrar.
+  // Melhor não guardar nada e tentar de novo no próximo quadro que aparecer.
+  function quaseTudoPreto(c) {
+    try {
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let claros = 0, olhados = 0;
+      for (let i = 0; i < d.length; i += 16) {         // um pixel a cada quatro já diz
+        olhados++;
+        if (Math.max(d[i], d[i + 1], d[i + 2]) > 24) claros++;
+      }
+      return claros < olhados * 0.04;
+    } catch (err) { return false; }   // canvas sujo: não dá para olhar, então não recusamos
+  }
+
   // Um quadro do proprio <video> desenhado num canvas. Video de outra origem sem CORS suja
   // o canvas e toDataURL lanca: nesse caso ficamos sem miniatura, e esta tudo bem.
   function quadroAtual() {
     const v = $("video");
-    if (!v.videoWidth) return null;
+    if (!v.videoWidth || v.readyState < 2) return null;
     try {
       const L = 192, A = Math.max(1, Math.round(L * v.videoHeight / v.videoWidth));
       const c = document.createElement("canvas");
       c.width = L; c.height = A;
       c.getContext("2d").drawImage(v, 0, 0, L, A);
+      if (quaseTudoPreto(c)) return null;
       return c.toDataURL("image/jpeg", 0.62);
     } catch (err) { return null; }
   }
@@ -1587,14 +1623,17 @@
     if (v.readyState < 2) return;                       // sem quadro decodificado não há o que copiar
     if (exigirAdiante && v.currentTime < 1) return;
 
-    const dados = quadroAtual();
-    if (!dados) return;
-    minis.set(imp, dados);
-    desenharBiblioteca();
-    // 'temMini' só depois do quadro adiante: até lá o retrato provisório pode ser melhorado
-    guardarMini(imp, dados)
-      .then(() => { if (exigirAdiante) { it.temMini = true; salvarBiblioteca(); } })
-      .catch(() => {});
+    comQuadroNaTela(() => {
+      if (impressao !== imp || it.temMini) return;
+      const dados = quadroAtual();                      // devolve null se o quadro sair preto
+      if (!dados) return;
+      minis.set(imp, dados);
+      desenharBiblioteca();
+      // 'temMini' só depois do quadro adiante: até lá o retrato provisório pode ser melhorado
+      guardarMini(imp, dados)
+        .then(() => { if (exigirAdiante) { it.temMini = true; salvarBiblioteca(); } })
+        .catch(() => {});
+    });
   }
 
   function salvarBiblioteca() {

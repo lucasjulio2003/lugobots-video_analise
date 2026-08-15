@@ -65,6 +65,13 @@ dava: ela mexia no cursor por baixo de quem estava usando o vídeo — inclusive
 que saía do quadro errado ou nem saía. Agora ela sai do quadro que já está na tela, e melhora
 sozinha na primeira vez que você vai a um ponto adiante do primeiro segundo.
 
+Duas cautelas cercam o **preto**, que é como a maioria das gravações começa. Antes de copiar,
+esperamos o quadro estar de fato apresentado (`requestVideoFrameCallback`, com um prazo curto de
+segurança) — o `<video>` anuncia ter quadro um pouco antes disso, e uma cópia feita nesse vão sai
+preta. E, depois de copiar, um quadro quase todo escuro é **recusado** como miniatura: nada é
+guardado, e a próxima passagem por um quadro com imagem resolve. A foto de um lance ganha uma
+segunda chance e, se continuar escura, é aceita — ali o preto pode ser mesmo o que aconteceu.
+
 O empecilho é o CORS: um `<canvas>` que recebe um quadro de vídeo de outra origem fica "sujo" e
 não pode mais ser lido. Por isso o vídeo aberto por link é pedido com `crossorigin`, e, se o
 servidor dele não mandar `Access-Control-Allow-Origin`, o analisador refaz o pedido sem o
