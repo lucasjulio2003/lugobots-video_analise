@@ -452,7 +452,14 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; }
 }
 .c-editor button { align-self: flex-end; }
 
-.vazio-quadro { padding: 0 14px 16px; }
+/* o porquê de o quadro estar vazio vem antes das colunas, não depois delas */
+.aviso-quadro {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 10px 10px 0; padding: 9px 12px; border-radius: 8px; font-size: 13px;
+  background: color-mix(in srgb, var(--eu) 12%, var(--painel));
+  border: 1px solid color-mix(in srgb, var(--eu) 40%, transparent);
+}
+.aviso-quadro button { flex: none; }
 
 @media (max-width: 760px) {
   .lateral { position: absolute; top: 0; bottom: 0; box-shadow: 0 0 24px rgba(0,0,0,.28); }

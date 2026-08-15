@@ -151,11 +151,15 @@
       ? `${cards.length} lance(s) em ${partidas} partida(s) · ${anotados} com trabalho · ${mostrados} à vista`
       : "";
 
-    const vazio = $("vazioQuadro");
-    vazio.hidden = cards.length > 0 && mostrados > 0;
-    vazio.textContent = cards.length === 0
+    // Um quadro de colunas vazias não diz nada por si. Quando não há nada à vista, o motivo
+    // vem no alto da página — e, se for filtro, com o botão que o desfaz.
+    const aviso = $("avisoQuadro"), botao = $("btMostrarTudo");
+    aviso.hidden = mostrados > 0;
+    botao.hidden = cards.length === 0;
+    $("txtAviso").textContent = cards.length === 0
       ? "Nenhum lance guardado ainda. Abra o analisador, pause o vídeo e desenhe sobre um lance — ele aparece aqui."
-      : "Nenhum lance passa pelos filtros de cima.";
+      : `${cards.length} lance(s) guardado(s), nenhum à vista: os filtros de cima estão escondendo` +
+        ` todos. Um lance só “tem trabalho” depois de ganhar anotação, prioridade ou estágio.`;
   }
 
   function montarColuna(est, lista) {
@@ -431,6 +435,13 @@
     });
     $("ckAnotados").addEventListener("change", (e) => {
       filtros.soTrabalho = e.target.checked; guardarFiltros(); desenhar();
+    });
+    $("btMostrarTudo").addEventListener("click", () => {
+      filtros = { partida: "", busca: "", soTrabalho: false };
+      $("ckAnotados").checked = false;
+      $("txtBusca").value = "";
+      guardarFiltros();
+      desenhar();
     });
 
     // O analisador está na outra aba mexendo nos mesmos registros. Com uma anotação aberta
